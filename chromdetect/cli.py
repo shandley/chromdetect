@@ -9,12 +9,53 @@ import json
 import sys
 from pathlib import Path
 
+from chromdetect import __version__
 from chromdetect.core import (
     AssemblyStats,
     ScaffoldInfo,
     classify_scaffolds,
     parse_fasta,
+    parse_fasta_from_handle,
 )
+from chromdetect.patterns import (
+    CHROMOSOME_PATTERNS,
+    FRAGMENT_PATTERNS,
+    UNLOCALIZED_PATTERNS,
+)
+
+# Exit codes following sysexits.h conventions
+EXIT_SUCCESS = 0
+EXIT_ERROR = 1  # General error
+
+
+def show_patterns() -> None:
+    """Display supported naming patterns."""
+    print("ChromDetect Supported Naming Patterns")
+    print("=" * 50)
+    print()
+    print("CHROMOSOME PATTERNS (detected as chromosome-level):")
+    print("-" * 50)
+    for pattern, name in CHROMOSOME_PATTERNS:
+        # Clean up regex for display
+        display_pattern = pattern.replace("^", "").replace("$", "")
+        print(f"  {name:<25} {display_pattern}")
+
+    print()
+    print("UNLOCALIZED PATTERNS (chromosome-associated but not placed):")
+    print("-" * 50)
+    for pattern in UNLOCALIZED_PATTERNS:
+        print(f"  {pattern}")
+
+    print()
+    print("FRAGMENT PATTERNS (contigs/fragments, not chromosome-level):")
+    print("-" * 50)
+    for pattern in FRAGMENT_PATTERNS:
+        print(f"  {pattern}")
+
+
+EXIT_USAGE = 2  # Command line usage error (argparse default)
+EXIT_NOINPUT = 66  # Input file not found or not readable
+EXIT_DATAERR = 65  # Input data format error
 
 
 def format_output(
@@ -120,8 +161,9 @@ Supported naming conventions:
 
     parser.add_argument(
         "fasta",
-        type=Path,
-        help="Input FASTA file (can be gzipped)",
+        type=str,
+        nargs="?",
+        help="Input FASTA file (can be gzipped), or '-' for stdin",
     )
     parser.add_argument(
         "-o",
@@ -156,6 +198,20 @@ Supported naming conventions:
         help="Only output chromosome-level scaffolds",
     )
     parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.0,
+        metavar="FLOAT",
+        help="Minimum confidence threshold (0.0-1.0) to include scaffolds",
+    )
+    parser.add_argument(
+        "--min-length",
+        type=int,
+        default=0,
+        metavar="BP",
+        help="Minimum scaffold length (bp) to include in output",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -163,29 +219,84 @@ Supported naming conventions:
     )
     parser.add_argument(
         "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed processing information",
+    )
+    parser.add_argument(
+        "-V",
         "--version",
         action="version",
-        version="%(prog)s 0.1.0",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--list-patterns",
+        action="store_true",
+        help="Show supported naming patterns and exit",
     )
 
     args = parser.parse_args()
 
-    if not args.fasta.exists():
-        print(f"Error: File not found: {args.fasta}", file=sys.stderr)
-        sys.exit(1)
+    # Handle --list-patterns before requiring fasta argument
+    if args.list_patterns:
+        show_patterns()
+        sys.exit(EXIT_SUCCESS)
+
+    # Require fasta argument for normal operation
+    if args.fasta is None:
+        parser.error("the following arguments are required: fasta")
+
+    # Handle conflicting verbosity flags
+    verbose = args.verbose and not args.quiet
+
+    # Handle stdin vs file input
+    use_stdin = args.fasta == "-"
+    fasta_path = None if use_stdin else Path(args.fasta)
+
+    if verbose:
+        print(f"ChromDetect {__version__}", file=sys.stderr)
+        print(f"Input: {'stdin' if use_stdin else args.fasta}", file=sys.stderr)
+        print(f"Output format: {args.format}", file=sys.stderr)
+        print(f"Min chromosome size: {args.min_size:,} bp", file=sys.stderr)
+        if args.karyotype:
+            print(f"Expected karyotype: {args.karyotype}", file=sys.stderr)
+
+    if not use_stdin:
+        assert fasta_path is not None  # for type checker
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
 
     if not args.quiet:
-        print(f"Parsing {args.fasta}...", file=sys.stderr)
+        source = "stdin" if use_stdin else str(fasta_path)
+        print(f"Parsing {source}...", file=sys.stderr)
 
     try:
-        scaffolds = parse_fasta(args.fasta)
+        if use_stdin:
+            scaffolds = parse_fasta_from_handle(sys.stdin)
+        else:
+            assert fasta_path is not None  # for type checker
+            scaffolds = parse_fasta(fasta_path)
+    except ValueError as e:
+        print(f"Error: Invalid FASTA format: {e}", file=sys.stderr)
+        sys.exit(EXIT_DATAERR)
+    except OSError as e:
+        print(f"Error: Cannot read file: {e}", file=sys.stderr)
+        sys.exit(EXIT_NOINPUT)
     except Exception as e:
         print(f"Error parsing FASTA: {e}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
 
     if not args.quiet:
         print(f"Found {len(scaffolds)} scaffolds", file=sys.stderr)
         print("Classifying scaffolds...", file=sys.stderr)
+
+    if verbose:
+        total_length = sum(s[1] for s in scaffolds)
+        print(f"Total assembly length: {total_length:,} bp", file=sys.stderr)
+        lengths = sorted([s[1] for s in scaffolds], reverse=True)
+        print(f"Largest scaffold: {lengths[0]:,} bp", file=sys.stderr)
+        print(f"Smallest scaffold: {lengths[-1]:,} bp", file=sys.stderr)
 
     results, stats = classify_scaffolds(
         scaffolds,
@@ -193,9 +304,38 @@ Supported naming conventions:
         expected_chromosomes=args.karyotype,
     )
 
-    # Filter if requested
+    if verbose:
+        print("Classification complete:", file=sys.stderr)
+        print(f"  Chromosomes: {stats.chromosome_count}", file=sys.stderr)
+        print(f"  Unlocalized: {stats.unlocalized_count}", file=sys.stderr)
+        print(f"  Unplaced: {stats.unplaced_count}", file=sys.stderr)
+        print(f"  N50: {stats.n50:,} bp", file=sys.stderr)
+
+    # Apply filters
+    original_count = len(results)
+
     if args.chromosomes_only:
         results = [r for r in results if r.classification == "chromosome"]
+
+    if args.min_confidence > 0:
+        results = [r for r in results if r.confidence >= args.min_confidence]
+
+    if args.min_length > 0:
+        results = [r for r in results if r.length >= args.min_length]
+
+    if verbose and len(results) != original_count:
+        filters_applied = []
+        if args.chromosomes_only:
+            filters_applied.append("chromosomes-only")
+        if args.min_confidence > 0:
+            filters_applied.append(f"min-confidence={args.min_confidence}")
+        if args.min_length > 0:
+            filters_applied.append(f"min-length={args.min_length:,}")
+        print(
+            f"Filtered to {len(results)} scaffolds "
+            f"(from {original_count} total, filters: {', '.join(filters_applied)})",
+            file=sys.stderr,
+        )
 
     # Format output
     output = format_output(results, stats, args.format)

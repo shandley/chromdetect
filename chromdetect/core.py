@@ -8,6 +8,7 @@ chromosome-level scaffolds in genome assemblies.
 from __future__ import annotations
 
 import gzip
+import typing
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -78,6 +79,89 @@ class AssemblyStats:
         return asdict(self)
 
 
+def parse_fasta_from_handle(
+    handle: typing.Iterable[str],
+) -> list[tuple[str, int, str]]:
+    """
+    Parse FASTA from a file handle and return list of (name, length, sequence_sample).
+
+    For efficiency, only stores first 10kb of each sequence (for GC calculation).
+
+    Args:
+        handle: File-like object to read from (e.g., open file, sys.stdin)
+
+    Returns:
+        List of tuples: (scaffold_name, length, sequence_sample)
+
+    Raises:
+        ValueError: If the input appears to be empty or invalid FASTA format
+    """
+    scaffolds: list[tuple[str, int, str]] = []
+    current_name: str | None = None
+    current_length = 0
+    current_seq_sample: list[str] = []
+    sample_limit = 10000  # Only keep first 10kb for GC calculation
+    line_count = 0
+    found_header = False
+
+    for raw_line in handle:
+        line_count += 1
+        line: str = str(raw_line).strip()
+
+        # Skip empty lines
+        if not line:
+            continue
+
+        if line.startswith(">"):
+            found_header = True
+            # Save previous scaffold
+            if current_name is not None:
+                seq_sample = "".join(current_seq_sample)
+                scaffolds.append((current_name, current_length, seq_sample))
+
+            # Start new scaffold - extract name (first word after >)
+            header_parts = line[1:].split()
+            if not header_parts:
+                raise ValueError(
+                    f"Line {line_count}: Empty FASTA header (just '>' with no name)"
+                )
+            current_name = header_parts[0]
+            current_length = 0
+            current_seq_sample = []
+        else:
+            # This is sequence data
+            if not found_header:
+                raise ValueError(
+                    f"Line {line_count}: Sequence data before first FASTA header. "
+                    "File may not be in FASTA format."
+                )
+            # Validate sequence characters (allow standard nucleotides + ambiguity codes)
+            valid_chars = set("ACGTNUacgtnuRYSWKMBDHVryswkmbdhv.-")
+            invalid_chars = set(line) - valid_chars
+            if invalid_chars:
+                # Only warn for non-whitespace invalid chars, don't fail
+                # Some FASTA files have quality scores or other data
+                pass
+            current_length += len(line)
+            if sum(len(s) for s in current_seq_sample) < sample_limit:
+                current_seq_sample.append(line)
+
+    # Don't forget last scaffold
+    if current_name is not None:
+        seq_sample = "".join(current_seq_sample)
+        scaffolds.append((current_name, current_length, seq_sample))
+
+    if not scaffolds:
+        if line_count == 0:
+            raise ValueError("Input is empty")
+        raise ValueError(
+            "No scaffolds found in input. "
+            "File may not be in FASTA format (expected lines starting with '>')."
+        )
+
+    return scaffolds
+
+
 def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     """
     Parse FASTA file and return list of (name, length, sequence_sample).
@@ -100,40 +184,11 @@ def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     if not fasta_path.exists():
         raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
 
-    scaffolds = []
     opener = gzip.open if str(fasta_path).endswith(".gz") else open
     mode = "rt" if str(fasta_path).endswith(".gz") else "r"
 
-    current_name: str | None = None
-    current_length = 0
-    current_seq_sample: list[str] = []
-    sample_limit = 10000  # Only keep first 10kb for GC calculation
-
     with opener(fasta_path, mode, encoding="utf-8") as f:
-        for raw_line in f:
-            line: str = str(raw_line).strip()
-            if line.startswith(">"):
-                # Save previous scaffold
-                if current_name is not None:
-                    seq_sample = "".join(current_seq_sample)
-                    scaffolds.append((current_name, current_length, seq_sample))
-
-                # Start new scaffold - extract name (first word after >)
-                current_name = line[1:].split()[0]
-                current_length = 0
-                current_seq_sample = []
-            else:
-                current_length += len(line)
-                if sum(len(s) for s in current_seq_sample) < sample_limit:
-                    current_seq_sample.append(line)
-
-        # Don't forget last scaffold
-        if current_name is not None:
-            seq_sample = "".join(current_seq_sample)
-            scaffolds.append((current_name, current_length, seq_sample))
-
-    if not scaffolds:
-        raise ValueError(f"No scaffolds found in {fasta_path}")
+        scaffolds = parse_fasta_from_handle(f)  # type: ignore[arg-type]
 
     return scaffolds
 

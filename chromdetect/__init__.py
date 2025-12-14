@@ -12,6 +12,7 @@ from chromdetect.core import (
     detect_by_name,
     detect_by_size,
     parse_fasta,
+    parse_fasta_from_handle,
 )
 from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
@@ -25,6 +26,7 @@ __all__ = [
     "AssemblyStats",
     "classify_scaffolds",
     "parse_fasta",
+    "parse_fasta_from_handle",
     "detect_by_name",
     "detect_by_size",
     "CHROMOSOME_PATTERNS",

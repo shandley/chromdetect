@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 
 from chromdetect.core import (
-    ScaffoldInfo,
     AssemblyStats,
-    parse_fasta,
-    classify_scaffolds,
+    ScaffoldInfo,
+    calculate_gc,
     calculate_n50,
     calculate_n90,
-    calculate_gc,
+    classify_scaffolds,
     detect_by_size,
+    parse_fasta,
 )
 
 
@@ -156,7 +156,7 @@ class TestFastaParsing:
         ) as f:
             f.flush()
 
-            with pytest.raises(ValueError, match="No scaffolds"):
+            with pytest.raises(ValueError, match="(No scaffolds|Input is empty)"):
                 parse_fasta(Path(f.name))
 
     def test_parse_missing_file(self) -> None:
