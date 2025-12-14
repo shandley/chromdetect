@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 
 from chromdetect.core import (
-    ScaffoldInfo,
     AssemblyStats,
+    ScaffoldInfo,
     classify_scaffolds,
     parse_fasta,
 )

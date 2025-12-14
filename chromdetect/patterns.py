@@ -13,7 +13,7 @@ Adding New Patterns:
 """
 
 import re
-from typing import Pattern
+from re import Pattern
 
 # Common chromosome naming patterns (case-insensitive by default)
 # Format: (pattern, method_name)

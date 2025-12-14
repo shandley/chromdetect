@@ -6,17 +6,17 @@ using multiple detection strategies to handle inconsistent naming conventions.
 """
 
 from chromdetect.core import (
-    ScaffoldInfo,
     AssemblyStats,
+    ScaffoldInfo,
     classify_scaffolds,
-    parse_fasta,
     detect_by_name,
     detect_by_size,
+    parse_fasta,
 )
 from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
-    UNLOCALIZED_PATTERNS,
     FRAGMENT_PATTERNS,
+    UNLOCALIZED_PATTERNS,
 )
 
 __version__ = "0.1.0"

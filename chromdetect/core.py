@@ -8,15 +8,13 @@ chromosome-level scaffolds in genome assemblies.
 from __future__ import annotations
 
 import gzip
-import re
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 from chromdetect.patterns import (
     COMPILED_CHROMOSOME_PATTERNS,
-    COMPILED_UNLOCALIZED,
     COMPILED_FRAGMENT,
+    COMPILED_UNLOCALIZED,
 )
 
 
@@ -38,7 +36,7 @@ class ScaffoldInfo:
     classification: str  # "chromosome", "unlocalized", "unplaced", "other"
     confidence: float  # 0.0 - 1.0
     detection_method: str
-    chromosome_id: Optional[str] = None
+    chromosome_id: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -73,7 +71,7 @@ class AssemblyStats:
     unlocalized_count: int
     unplaced_count: int
     largest_scaffold: int
-    gc_content: Optional[float] = None
+    gc_content: float | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -106,7 +104,7 @@ def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     opener = gzip.open if str(fasta_path).endswith(".gz") else open
     mode = "rt" if str(fasta_path).endswith(".gz") else "r"
 
-    current_name: Optional[str] = None
+    current_name: str | None = None
     current_length = 0
     current_seq_sample: list[str] = []
     sample_limit = 10000  # Only keep first 10kb for GC calculation
@@ -140,7 +138,7 @@ def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     return scaffolds
 
 
-def calculate_gc(sequence: str) -> Optional[float]:
+def calculate_gc(sequence: str) -> float | None:
     """Calculate GC content of a sequence.
 
     Args:
@@ -210,7 +208,7 @@ def calculate_n90(lengths: list[int]) -> int:
     return sorted_lengths[-1]
 
 
-def detect_by_name(name: str) -> tuple[str, float, str, Optional[str]]:
+def detect_by_name(name: str) -> tuple[str, float, str, str | None]:
     """
     Detect scaffold type by name pattern matching.
 
@@ -291,7 +289,7 @@ def detect_by_size(
 def classify_scaffolds(
     scaffolds: list[tuple[str, int, str]],
     min_chromosome_size: int = 10_000_000,
-    expected_chromosomes: Optional[int] = None,
+    expected_chromosomes: int | None = None,
 ) -> tuple[list[ScaffoldInfo], AssemblyStats]:
     """
     Classify all scaffolds using multiple detection strategies.
@@ -326,7 +324,7 @@ def classify_scaffolds(
 
     results = []
 
-    for name, length, seq_sample in scaffolds:
+    for name, length, _seq_sample in scaffolds:
         # Get classifications from each method
         name_class, name_conf, name_method, chr_id = detect_by_name(name)
         size_class, size_conf, size_method = detect_by_size(
