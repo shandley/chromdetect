@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/chromdetect.svg)](https://badge.fury.io/py/chromdetect)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/verity-project/chromdetect/actions/workflows/test.yml/badge.svg)](https://github.com/verity-project/chromdetect/actions/workflows/test.yml)
+[![Tests](https://github.com/shandley/chromdetect/actions/workflows/test.yml/badge.svg)](https://github.com/shandley/chromdetect/actions/workflows/test.yml)
 
 **Detect chromosome-level scaffolds in genome assemblies with inconsistent naming conventions.**
 
@@ -19,6 +19,20 @@ Genome assemblies use wildly inconsistent naming conventions for chromosome-leve
 - `NC_000001.11`, `CM000001.1` (NCBI accessions)
 
 This inconsistency makes automated analysis and cross-species comparisons difficult. Existing QC tools like QUAST report metrics but don't classify scaffolds. Scaffolding tools like LACHESIS create assemblies but don't help interpret existing ones.
+
+## Why ChromDetect?
+
+| Feature | QUAST | assembly-stats | gfastats | **ChromDetect** |
+|---------|-------|----------------|----------|-----------------|
+| N50/N90 statistics | ✅ | ✅ | ✅ | ✅ |
+| Scaffold classification | ❌ | ❌ | ❌ | ✅ |
+| Pattern-based detection | ❌ | ❌ | ❌ | ✅ |
+| Size-based detection | ❌ | ❌ | ❌ | ✅ |
+| Karyotype-aware | ❌ | ❌ | ❌ | ✅ |
+| Multiple output formats | ✅ | ❌ | ✅ | ✅ |
+| Zero dependencies | ❌ | ✅ | ❌ | ✅ |
+
+ChromDetect fills a gap in the genomics toolkit: **automatically identifying which scaffolds represent chromosomes** rather than just reporting assembly statistics.
 
 ## The Solution
 
@@ -38,7 +52,7 @@ pip install chromdetect
 Or install from source:
 
 ```bash
-git clone https://github.com/verity-project/chromdetect.git
+git clone https://github.com/shandley/chromdetect.git
 cd chromdetect
 pip install -e .
 ```
@@ -242,7 +256,7 @@ If you use ChromDetect in your research, please cite:
 
 ```
 ChromDetect: Chromosome-level scaffold detection for genome assemblies
-https://github.com/verity-project/chromdetect
+https://github.com/shandley/chromdetect
 ```
 
 ## License
@@ -252,4 +266,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Related Projects
 
 - [QUAST](https://github.com/ablab/quast) - Quality assessment tool for genome assemblies
-- [Verity](https://github.com/verity-project/verity) - Hi-C-based assembly validation framework
+- [Verity](https://github.com/shandley/verity) - Hi-C-based assembly validation framework

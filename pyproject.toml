@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "Verity Project", email = "verity@example.com" }
+    { name = "Scott Handley", email = "handley.scott@gmail.com" }
 ]
 keywords = [
     "genomics",
@@ -48,10 +48,11 @@ dev = [
 chromdetect = "chromdetect.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/verity-project/chromdetect"
-Documentation = "https://github.com/verity-project/chromdetect#readme"
-Repository = "https://github.com/verity-project/chromdetect.git"
-Issues = "https://github.com/verity-project/chromdetect/issues"
+Homepage = "https://github.com/shandley/chromdetect"
+Documentation = "https://github.com/shandley/chromdetect#readme"
+Repository = "https://github.com/shandley/chromdetect.git"
+Issues = "https://github.com/shandley/chromdetect/issues"
+Changelog = "https://github.com/shandley/chromdetect/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["chromdetect"]
