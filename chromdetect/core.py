@@ -81,17 +81,20 @@ class AssemblyStats:
 
 def parse_fasta_from_handle(
     handle: typing.Iterable[str],
+    keep_full_sequence: bool = False,
 ) -> list[tuple[str, int, str]]:
     """
     Parse FASTA from a file handle and return list of (name, length, sequence_sample).
 
-    For efficiency, only stores first 10kb of each sequence (for GC calculation).
+    For efficiency, only stores first 10kb of each sequence (for GC calculation)
+    unless keep_full_sequence is True.
 
     Args:
         handle: File-like object to read from (e.g., open file, sys.stdin)
+        keep_full_sequence: If True, store entire sequence instead of just sample
 
     Returns:
-        List of tuples: (scaffold_name, length, sequence_sample)
+        List of tuples: (scaffold_name, length, sequence or sequence_sample)
 
     Raises:
         ValueError: If the input appears to be empty or invalid FASTA format
@@ -99,8 +102,8 @@ def parse_fasta_from_handle(
     scaffolds: list[tuple[str, int, str]] = []
     current_name: str | None = None
     current_length = 0
-    current_seq_sample: list[str] = []
-    sample_limit = 10000  # Only keep first 10kb for GC calculation
+    current_seq_parts: list[str] = []
+    sample_limit = 10000  # Only keep first 10kb for GC calculation (if not keeping full)
     line_count = 0
     found_header = False
 
@@ -116,8 +119,8 @@ def parse_fasta_from_handle(
             found_header = True
             # Save previous scaffold
             if current_name is not None:
-                seq_sample = "".join(current_seq_sample)
-                scaffolds.append((current_name, current_length, seq_sample))
+                seq = "".join(current_seq_parts)
+                scaffolds.append((current_name, current_length, seq))
 
             # Start new scaffold - extract name (first word after >)
             header_parts = line[1:].split()
@@ -127,7 +130,7 @@ def parse_fasta_from_handle(
                 )
             current_name = header_parts[0]
             current_length = 0
-            current_seq_sample = []
+            current_seq_parts = []
         else:
             # This is sequence data
             if not found_header:
@@ -143,13 +146,15 @@ def parse_fasta_from_handle(
                 # Some FASTA files have quality scores or other data
                 pass
             current_length += len(line)
-            if sum(len(s) for s in current_seq_sample) < sample_limit:
-                current_seq_sample.append(line)
+            if keep_full_sequence:
+                current_seq_parts.append(line)
+            elif sum(len(s) for s in current_seq_parts) < sample_limit:
+                current_seq_parts.append(line)
 
     # Don't forget last scaffold
     if current_name is not None:
-        seq_sample = "".join(current_seq_sample)
-        scaffolds.append((current_name, current_length, seq_sample))
+        seq = "".join(current_seq_parts)
+        scaffolds.append((current_name, current_length, seq))
 
     if not scaffolds:
         if line_count == 0:
@@ -162,18 +167,23 @@ def parse_fasta_from_handle(
     return scaffolds
 
 
-def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
+def parse_fasta(
+    fasta_path: Path | str,
+    keep_full_sequence: bool = False,
+) -> list[tuple[str, int, str]]:
     """
     Parse FASTA file and return list of (name, length, sequence_sample).
 
     Handles gzipped files automatically based on .gz extension.
-    For efficiency, only stores first 10kb of each sequence (for GC calculation).
+    For efficiency, only stores first 10kb of each sequence (for GC calculation)
+    unless keep_full_sequence is True.
 
     Args:
         fasta_path: Path to FASTA file (can be gzipped)
+        keep_full_sequence: If True, store entire sequence instead of just sample
 
     Returns:
-        List of tuples: (scaffold_name, length, sequence_sample)
+        List of tuples: (scaffold_name, length, sequence or sequence_sample)
 
     Raises:
         FileNotFoundError: If the FASTA file doesn't exist
@@ -188,7 +198,7 @@ def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     mode = "rt" if str(fasta_path).endswith(".gz") else "r"
 
     with opener(fasta_path, mode, encoding="utf-8") as f:
-        scaffolds = parse_fasta_from_handle(f)  # type: ignore[arg-type]
+        scaffolds = parse_fasta_from_handle(f, keep_full_sequence)  # type: ignore[arg-type]
 
     return scaffolds
 
@@ -513,3 +523,111 @@ def _adjust_for_karyotype(
                 r.confidence = min(0.6, r.confidence + 0.2)
 
     return results
+
+
+def write_fasta(
+    sequences: list[tuple[str, str]],
+    output_path: Path | str | None = None,
+    line_width: int = 80,
+) -> str:
+    """
+    Write sequences in FASTA format.
+
+    Args:
+        sequences: List of (name, sequence) tuples
+        output_path: Path to write to, or None to return as string
+        line_width: Characters per line for sequence wrapping (default 80)
+
+    Returns:
+        FASTA-formatted string if output_path is None, otherwise empty string
+    """
+    lines = []
+    for name, seq in sequences:
+        lines.append(f">{name}")
+        # Wrap sequence at specified line width
+        for i in range(0, len(seq), line_width):
+            lines.append(seq[i : i + line_width])
+
+    fasta_content = "\n".join(lines)
+    if fasta_content:
+        fasta_content += "\n"
+
+    if output_path:
+        output_path = Path(output_path)
+        with open(output_path, "w") as f:
+            f.write(fasta_content)
+        return ""
+
+    return fasta_content
+
+
+def format_bed(
+    results: list[ScaffoldInfo],
+    include_header: bool = False,
+) -> str:
+    """
+    Format scaffold information as BED format.
+
+    BED format is 0-based, half-open coordinates. Each scaffold becomes
+    a region spanning its full length.
+
+    Args:
+        results: List of ScaffoldInfo from classification
+        include_header: If True, include a header line (not standard BED)
+
+    Returns:
+        BED-formatted string
+    """
+    lines = []
+    if include_header:
+        lines.append("#chrom\tchromStart\tchromEnd\tname\tscore\tstrand")
+
+    for r in results:
+        # BED format: chrom, chromStart (0-based), chromEnd, name, score, strand
+        # Use confidence * 1000 for score (BED scores are 0-1000)
+        score = int(r.confidence * 1000)
+        # Use classification as the name field, scaffold name as chrom
+        lines.append(f"{r.name}\t0\t{r.length}\t{r.classification}\t{score}\t.")
+
+    return "\n".join(lines)
+
+
+def format_gff(
+    results: list[ScaffoldInfo],
+    source: str = "chromdetect",
+) -> str:
+    """
+    Format scaffold information as GFF3 format.
+
+    Each scaffold becomes a region feature spanning its full length.
+
+    Args:
+        results: List of ScaffoldInfo from classification
+        source: Source field for GFF (default "chromdetect")
+
+    Returns:
+        GFF3-formatted string
+    """
+    lines = ["##gff-version 3"]
+
+    for r in results:
+        # GFF3 format: seqid, source, type, start (1-based), end, score, strand, phase, attributes
+        feature_type = "chromosome" if r.classification == "chromosome" else "scaffold"
+        # GFF scores are . or float
+        score = f"{r.confidence:.3f}"
+        # Attributes: key=value pairs separated by semicolons
+        attrs = [
+            f"ID={r.name}",
+            f"Name={r.name}",
+            f"classification={r.classification}",
+            f"detection_method={r.detection_method}",
+        ]
+        if r.chromosome_id:
+            attrs.append(f"chromosome_id={r.chromosome_id}")
+
+        attr_str = ";".join(attrs)
+        lines.append(
+            f"{r.name}\t{source}\t{feature_type}\t1\t{r.length}\t{score}\t.\t.\t{attr_str}"
+        )
+
+    return "\n".join(lines)

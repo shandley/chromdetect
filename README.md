@@ -73,12 +73,22 @@ chromdetect assembly.fasta --karyotype 24
 
 # Export only chromosome-level scaffolds as TSV
 chromdetect assembly.fasta --chromosomes-only --format tsv > chromosomes.tsv
+
+# Export as BED or GFF format for pipeline integration
+chromdetect assembly.fasta --format bed > scaffolds.bed
+chromdetect assembly.fasta --format gff > scaffolds.gff
+
+# Extract chromosome sequences to a new FASTA file
+chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
+
+# Batch process multiple assemblies
+chromdetect --batch assemblies_dir/ --output results_dir/
 ```
 
 ### Python API
 
 ```python
-from chromdetect import parse_fasta, classify_scaffolds
+from chromdetect import parse_fasta, classify_scaffolds, write_fasta, format_bed, format_gff
 
 # Parse and classify
 scaffolds = parse_fasta("assembly.fasta.gz")
@@ -93,6 +103,17 @@ print(f"N50: {stats.n50 / 1e6:.1f} Mb")
 for r in results:
     if r.classification == "chromosome":
         print(f"{r.name}: {r.length:,} bp (confidence: {r.confidence:.2f})")
+
+# Export to BED or GFF format
+bed_output = format_bed(results)
+gff_output = format_gff(results)
+
+# Extract chromosome sequences (requires full sequence parsing)
+scaffolds = parse_fasta("assembly.fasta", keep_full_sequence=True)
+results, stats = classify_scaffolds(scaffolds)
+chr_seqs = [(name, seq) for name, length, seq in scaffolds
+            if any(r.name == name and r.classification == "chromosome" for r in results)]
+write_fasta(chr_seqs, "chromosomes.fasta")
 ```
 
 ## Output Formats
@@ -152,15 +173,37 @@ chr2    175432198    chromosome    0.93    name_chr_explicit    2
 ...
 ```
 
+### BED
+
+Standard BED6 format for integration with bedtools, IGV, and other genomics tools:
+
+```
+chr1    0    198765432    chromosome    950    .
+chr2    0    175432198    chromosome    930    .
+...
+```
+
+### GFF3
+
+GFF3 format with classification metadata in attributes:
+
+```
+##gff-version 3
+chr1    chromdetect    chromosome    1    198765432    0.950    .    .    ID=chr1;Name=chr1;classification=chromosome;detection_method=name_chr_explicit;chromosome_id=1
+...
+```
+
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `-f, --format` | Output format: `summary`, `json`, `tsv` (default: summary) |
+| `-f, --format` | Output format: `summary`, `json`, `tsv`, `bed`, `gff` (default: summary) |
 | `-o, --output` | Write output to file instead of stdout |
 | `-k, --karyotype` | Expected chromosome count for karyotype-informed detection |
 | `-s, --min-size` | Minimum size (bp) to consider chromosome-level (default: 10Mb) |
 | `-c, --chromosomes-only` | Only output chromosome-level scaffolds |
+| `--extract-chromosomes` | Extract chromosome sequences to a FASTA file |
+| `--batch` | Process all FASTA files in a directory |
 | `-q, --quiet` | Suppress progress messages |
 
 ## Supported Naming Conventions
@@ -226,6 +269,36 @@ for fasta, n_chr in zip(species_files, karyotypes):
 ```bash
 # As part of assembly QC pipeline
 chromdetect assembly.fasta --format json | jq '.summary.chromosome_count'
+
+# Export scaffold regions in BED format for downstream analysis
+chromdetect assembly.fasta --format bed --chromosomes-only > chromosomes.bed
+bedtools getfasta -fi assembly.fasta -bed chromosomes.bed -fo chr_regions.fa
+```
+
+### Batch Processing
+
+```bash
+# Process all assemblies in a directory
+chromdetect --batch assemblies/ --format json --output results/
+
+# This creates:
+# - results/assembly1.json
+# - results/assembly2.json
+# - ...
+# - results/batch_summary.tsv  (overview of all assemblies)
+```
+
+### Extract Chromosome Sequences
+
+```bash
+# Extract only chromosome-level sequences to a new FASTA
+chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
+
+# Combine with other options
+chromdetect assembly.fasta \
+    --karyotype 24 \
+    --extract-chromosomes chromosomes.fasta \
+    --format json --output report.json
 ```
 
 ## Contributing

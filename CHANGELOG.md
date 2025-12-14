@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2024-12-14
+
+### Added
+- **New Output Formats**:
+  - BED format (`--format bed`) for integration with bedtools, IGV, and genomics pipelines
+  - GFF3 format (`--format gff`) with classification metadata in attributes
+- **Chromosome Sequence Extraction**:
+  - `--extract-chromosomes FILE` flag to extract chromosome sequences to a new FASTA file
+  - `write_fasta()` function in Python API for writing FASTA files
+  - `parse_fasta(keep_full_sequence=True)` option to retain full sequences
+- **Batch Processing**:
+  - `--batch DIR` flag to process all FASTA files in a directory
+  - Automatic output file generation per assembly
+  - Batch summary TSV with overview of all processed assemblies
+- **API Additions**:
+  - `format_bed()` function for BED format output
+  - `format_gff()` function for GFF3 format output
+  - `write_fasta()` function for FASTA file writing
+- **Testing**:
+  - 16 new tests for BED/GFF formats, batch processing, and sequence extraction
+  - Total: 116 tests
+
 ## [0.2.0] - 2024-12-14
 
 ### Added
@@ -59,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite
 - Examples for basic usage, batch processing, and karyotype detection
 
-[Unreleased]: https://github.com/shandley/chromdetect/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shandley/chromdetect/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shandley/chromdetect/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shandley/chromdetect/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/shandley/chromdetect/releases/tag/v0.1.0

@@ -14,8 +14,11 @@ from chromdetect.core import (
     AssemblyStats,
     ScaffoldInfo,
     classify_scaffolds,
+    format_bed,
+    format_gff,
     parse_fasta,
     parse_fasta_from_handle,
+    write_fasta,
 )
 from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
@@ -68,7 +71,7 @@ def format_output(
     Args:
         results: List of ScaffoldInfo from classification
         stats: AssemblyStats summary
-        output_format: One of "json", "tsv", or "summary"
+        output_format: One of "json", "tsv", "summary", "bed", or "gff"
 
     Returns:
         Formatted string for output
@@ -88,6 +91,12 @@ def format_output(
                 f"{r.confidence}\t{r.detection_method}\t{r.chromosome_id or ''}"
             )
         return "\n".join(lines)
+
+    elif output_format == "bed":
+        return format_bed(results)
+
+    elif output_format == "gff":
+        return format_gff(results)
 
     elif output_format == "summary":
         lines = [
@@ -131,6 +140,142 @@ def format_output(
         raise ValueError(f"Unknown format: {output_format}")
 
 
+def process_batch(args: argparse.Namespace) -> None:
+    """Process all FASTA files in a directory.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    batch_dir = args.batch
+    if not batch_dir.is_dir():
+        print(f"Error: {batch_dir} is not a directory", file=sys.stderr)
+        sys.exit(EXIT_NOINPUT)
+
+    # Find all FASTA files
+    fasta_extensions = {".fasta", ".fa", ".fna", ".fasta.gz", ".fa.gz", ".fna.gz"}
+    fasta_files = []
+    for ext in fasta_extensions:
+        if ext.endswith(".gz"):
+            # Handle double extensions like .fasta.gz
+            base_ext = ext[:-3]  # Remove .gz
+            fasta_files.extend(batch_dir.glob(f"*{base_ext}.gz"))
+        else:
+            fasta_files.extend(batch_dir.glob(f"*{ext}"))
+
+    # Remove duplicates and sort
+    fasta_files = sorted(set(fasta_files))
+
+    if not fasta_files:
+        print(f"Error: No FASTA files found in {batch_dir}", file=sys.stderr)
+        sys.exit(EXIT_NOINPUT)
+
+    # Determine output directory
+    output_dir = args.output if args.output else batch_dir / "chromdetect_results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    verbose = args.verbose and not args.quiet
+
+    if not args.quiet:
+        print(f"Found {len(fasta_files)} FASTA files in {batch_dir}", file=sys.stderr)
+        print(f"Results will be written to {output_dir}", file=sys.stderr)
+
+    # Determine output file extension based on format
+    format_extensions = {
+        "json": ".json",
+        "tsv": ".tsv",
+        "summary": ".txt",
+        "bed": ".bed",
+        "gff": ".gff",
+    }
+    out_ext = format_extensions.get(args.format, ".txt")
+
+    # Process each file
+    results_summary = []
+    for i, fasta_path in enumerate(fasta_files, 1):
+        if not args.quiet:
+            print(f"[{i}/{len(fasta_files)}] Processing {fasta_path.name}...", file=sys.stderr)
+
+        try:
+            # Parse FASTA
+            need_full_sequences = args.extract_chromosomes is not None
+            scaffolds = parse_fasta(fasta_path, need_full_sequences)
+
+            # Classify
+            results, stats = classify_scaffolds(
+                scaffolds,
+                min_chromosome_size=args.min_size,
+                expected_chromosomes=args.karyotype,
+            )
+
+            # Handle chromosome extraction if requested
+            if args.extract_chromosomes:
+                scaffold_seqs = {name: seq for name, _length, seq in scaffolds}
+                chr_names = {r.name for r in results if r.classification == "chromosome"}
+                chr_sequences = [
+                    (name, scaffold_seqs[name]) for name in chr_names if name in scaffold_seqs
+                ]
+                chr_sequences.sort(key=lambda x: x[0])
+                if chr_sequences:
+                    # Create output filename based on input
+                    chr_out = output_dir / f"{fasta_path.stem}_chromosomes.fasta"
+                    write_fasta(chr_sequences, chr_out)
+
+            # Apply filters
+            if args.chromosomes_only:
+                results = [r for r in results if r.classification == "chromosome"]
+            if args.min_confidence > 0:
+                results = [r for r in results if r.confidence >= args.min_confidence]
+            if args.min_length > 0:
+                results = [r for r in results if r.length >= args.min_length]
+
+            # Format and write output
+            output = format_output(results, stats, args.format)
+            out_file = output_dir / f"{fasta_path.stem}{out_ext}"
+            with open(out_file, "w") as f:
+                f.write(output)
+
+            # Track summary
+            results_summary.append({
+                "file": fasta_path.name,
+                "scaffolds": stats.total_scaffolds,
+                "chromosomes": stats.chromosome_count,
+                "total_length": stats.total_length,
+                "n50": stats.n50,
+            })
+
+            if verbose:
+                print(
+                    f"  -> {stats.chromosome_count} chromosomes, "
+                    f"N50={stats.n50:,} bp",
+                    file=sys.stderr,
+                )
+
+        except Exception as e:
+            print(f"  Error processing {fasta_path.name}: {e}", file=sys.stderr)
+            results_summary.append({
+                "file": fasta_path.name,
+                "error": str(e),
+            })
+
+    # Write batch summary
+    summary_file = output_dir / "batch_summary.tsv"
+    with open(summary_file, "w") as f:
+        f.write("file\tscaffolds\tchromosomes\ttotal_length\tn50\terror\n")
+        for item in results_summary:
+            if "error" in item:
+                f.write(f"{item['file']}\t\t\t\t\t{item['error']}\n")
+            else:
+                f.write(
+                    f"{item['file']}\t{item['scaffolds']}\t{item['chromosomes']}\t"
+                    f"{item['total_length']}\t{item['n50']}\t\n"
+                )
+
+    if not args.quiet:
+        successful = sum(1 for r in results_summary if "error" not in r)
+        print(f"\nBatch complete: {successful}/{len(fasta_files)} files processed", file=sys.stderr)
+        print(f"Summary written to {summary_file}", file=sys.stderr)
+
+
 def main() -> None:
     """Main entry point for chromdetect CLI."""
     parser = argparse.ArgumentParser(
@@ -143,6 +288,10 @@ Examples:
   chromdetect assembly.fasta.gz --output results.json
   chromdetect assembly.fasta --karyotype 24 --format summary
   chromdetect assembly.fasta --min-size 5000000 --format tsv > scaffolds.tsv
+  chromdetect assembly.fasta --format bed > scaffolds.bed
+  chromdetect assembly.fasta --format gff > scaffolds.gff
+  chromdetect assembly.fasta --extract-chromosomes -o chromosomes.fasta
+  chromdetect --batch assemblies/ --output results/
 
 The tool uses multiple detection strategies:
   - Name patterns (Super_scaffold, Chr, etc.)
@@ -174,7 +323,7 @@ Supported naming conventions:
     parser.add_argument(
         "-f",
         "--format",
-        choices=["json", "tsv", "summary"],
+        choices=["json", "tsv", "summary", "bed", "gff"],
         default="summary",
         help="Output format (default: summary)",
     )
@@ -196,6 +345,18 @@ Supported naming conventions:
         "--chromosomes-only",
         action="store_true",
         help="Only output chromosome-level scaffolds",
+    )
+    parser.add_argument(
+        "--extract-chromosomes",
+        type=Path,
+        metavar="FILE",
+        help="Extract chromosome sequences to FASTA file",
+    )
+    parser.add_argument(
+        "--batch",
+        type=Path,
+        metavar="DIR",
+        help="Process all FASTA files in directory (batch mode)",
     )
     parser.add_argument(
         "--min-confidence",
@@ -242,6 +403,11 @@ Supported naming conventions:
         show_patterns()
         sys.exit(EXIT_SUCCESS)
 
+    # Handle batch mode
+    if args.batch:
+        process_batch(args)
+        sys.exit(EXIT_SUCCESS)
+
     # Require fasta argument for normal operation
     if args.fasta is None:
         parser.error("the following arguments are required: fasta")
@@ -253,6 +419,9 @@ Supported naming conventions:
     use_stdin = args.fasta == "-"
     fasta_path = None if use_stdin else Path(args.fasta)
 
+    # Determine if we need full sequences (for extraction)
+    need_full_sequences = args.extract_chromosomes is not None
+
     if verbose:
         print(f"ChromDetect {__version__}", file=sys.stderr)
         print(f"Input: {'stdin' if use_stdin else args.fasta}", file=sys.stderr)
@@ -260,6 +429,8 @@ Supported naming conventions:
         print(f"Min chromosome size: {args.min_size:,} bp", file=sys.stderr)
         if args.karyotype:
             print(f"Expected karyotype: {args.karyotype}", file=sys.stderr)
+        if args.extract_chromosomes:
+            print(f"Extract chromosomes to: {args.extract_chromosomes}", file=sys.stderr)
 
     if not use_stdin:
         assert fasta_path is not None  # for type checker
@@ -273,10 +444,10 @@ Supported naming conventions:
 
     try:
         if use_stdin:
-            scaffolds = parse_fasta_from_handle(sys.stdin)
+            scaffolds = parse_fasta_from_handle(sys.stdin, need_full_sequences)
         else:
             assert fasta_path is not None  # for type checker
-            scaffolds = parse_fasta(fasta_path)
+            scaffolds = parse_fasta(fasta_path, need_full_sequences)
     except ValueError as e:
         print(f"Error: Invalid FASTA format: {e}", file=sys.stderr)
         sys.exit(EXIT_DATAERR)
@@ -310,6 +481,30 @@ Supported naming conventions:
         print(f"  Unlocalized: {stats.unlocalized_count}", file=sys.stderr)
         print(f"  Unplaced: {stats.unplaced_count}", file=sys.stderr)
         print(f"  N50: {stats.n50:,} bp", file=sys.stderr)
+
+    # Handle chromosome extraction
+    if args.extract_chromosomes:
+        # Build a mapping of scaffold name to sequence
+        scaffold_seqs = {name: seq for name, _length, seq in scaffolds}
+        # Get chromosome names
+        chr_names = {r.name for r in results if r.classification == "chromosome"}
+        # Extract chromosome sequences
+        chr_sequences = [
+            (name, scaffold_seqs[name]) for name in chr_names if name in scaffold_seqs
+        ]
+        # Sort by name for consistent output
+        chr_sequences.sort(key=lambda x: x[0])
+
+        if not chr_sequences:
+            print("Warning: No chromosome sequences to extract", file=sys.stderr)
+        else:
+            write_fasta(chr_sequences, args.extract_chromosomes)
+            if not args.quiet:
+                print(
+                    f"Extracted {len(chr_sequences)} chromosome sequences "
+                    f"to {args.extract_chromosomes}",
+                    file=sys.stderr,
+                )
 
     # Apply filters
     original_count = len(results)

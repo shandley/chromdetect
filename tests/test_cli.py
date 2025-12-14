@@ -172,7 +172,7 @@ class TestCLIIntegration:
         )
         assert result.returncode == 0
         assert "chromdetect" in result.stdout
-        assert "0.2.0" in result.stdout
+        assert "0.3.0" in result.stdout
 
     def test_help_flag(self) -> None:
         """Test --help flag."""
@@ -259,7 +259,7 @@ class TestCLIIntegration:
             text=True,
         )
         assert result.returncode == 0
-        assert "ChromDetect 0.2.0" in result.stderr
+        assert "ChromDetect 0.3.0" in result.stderr
         assert "Input file:" in result.stderr or "Input:" in result.stderr
 
     def test_chromosomes_only_filter(self, small_fasta: Path) -> None:
@@ -470,3 +470,448 @@ class TestStdinSupport:
         )
         assert result.returncode == EXIT_DATAERR
         assert "Invalid FASTA format" in result.stderr
+
+
+class TestBEDFormat:
+    """Test BED format output."""
+
+    @pytest.fixture
+    def small_fasta(self) -> Path:
+        """Create a small FASTA file for quick tests."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            f.write(">chr1\n")
+            f.write("ATCGATCG" * 100 + "\n")
+            f.write(">chr2\n")
+            f.write("GCTAGCTA" * 100 + "\n")
+            f.write(">scaffold1\n")
+            f.write("AAAAAAAA" * 50 + "\n")
+            f.flush()
+            return Path(f.name)
+
+    def test_bed_format_output(self, small_fasta: Path) -> None:
+        """Test BED format output."""
+        result = subprocess.run(
+            [sys.executable, "-m", "chromdetect", str(small_fasta), "-f", "bed", "-q"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        lines = result.stdout.strip().split("\n")
+        # Should have 3 scaffolds
+        assert len(lines) == 3
+        # Check BED format (tab-separated, 6 columns)
+        for line in lines:
+            fields = line.split("\t")
+            assert len(fields) == 6
+            # Check start is 0 (BED is 0-based)
+            assert fields[1] == "0"
+            # Check score is numeric
+            assert fields[4].isdigit()
+
+    def test_bed_format_chromosomes_only(self, small_fasta: Path) -> None:
+        """Test BED format with chromosomes-only filter."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                str(small_fasta),
+                "-f",
+                "bed",
+                "-c",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        lines = result.stdout.strip().split("\n")
+        # All should be chromosomes
+        for line in lines:
+            fields = line.split("\t")
+            assert fields[3] == "chromosome"
+
+
+class TestGFFFormat:
+    """Test GFF format output."""
+
+    @pytest.fixture
+    def small_fasta(self) -> Path:
+        """Create a small FASTA file for quick tests."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            f.write(">chr1\n")
+            f.write("ATCGATCG" * 100 + "\n")
+            f.write(">chr2\n")
+            f.write("GCTAGCTA" * 100 + "\n")
+            f.write(">scaffold1\n")
+            f.write("AAAAAAAA" * 50 + "\n")
+            f.flush()
+            return Path(f.name)
+
+    def test_gff_format_output(self, small_fasta: Path) -> None:
+        """Test GFF format output."""
+        result = subprocess.run(
+            [sys.executable, "-m", "chromdetect", str(small_fasta), "-f", "gff", "-q"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        lines = result.stdout.strip().split("\n")
+        # First line should be GFF version header
+        assert lines[0] == "##gff-version 3"
+        # Should have header + 3 scaffolds
+        assert len(lines) == 4
+        # Check GFF format (tab-separated, 9 columns)
+        for line in lines[1:]:
+            fields = line.split("\t")
+            assert len(fields) == 9
+            # Check source is chromdetect
+            assert fields[1] == "chromdetect"
+            # Check start is 1 (GFF is 1-based)
+            assert fields[3] == "1"
+            # Check attributes contain ID
+            assert "ID=" in fields[8]
+
+
+class TestExtractChromosomes:
+    """Test chromosome sequence extraction."""
+
+    @pytest.fixture
+    def sample_fasta(self) -> Path:
+        """Create a sample FASTA file for testing."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            f.write(">chr1\n")
+            f.write("ATCGATCGATCGATCG\n")
+            f.write(">chr2\n")
+            f.write("GCTAGCTAGCTAGCTA\n")
+            f.write(">scaffold1\n")
+            f.write("AAAAAAAAAAAAAAAA\n")
+            f.flush()
+            return Path(f.name)
+
+    def test_extract_chromosomes(self, sample_fasta: Path) -> None:
+        """Test extracting chromosome sequences to file."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as out:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "chromdetect",
+                    str(sample_fasta),
+                    "--extract-chromosomes",
+                    out.name,
+                    "-q",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0
+
+            # Read the extracted file
+            with open(out.name) as f:
+                content = f.read()
+
+            # Should contain chromosome sequences
+            assert ">chr1" in content
+            assert ">chr2" in content
+            # Should not contain scaffold1 (it's classified as unplaced)
+            # Note: depends on classification logic
+
+    def test_extract_chromosomes_message(self, sample_fasta: Path) -> None:
+        """Test that extraction reports success."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as out:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "chromdetect",
+                    str(sample_fasta),
+                    "--extract-chromosomes",
+                    out.name,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0
+            assert "Extracted" in result.stderr
+            assert "chromosome sequences" in result.stderr
+
+
+class TestBatchProcessing:
+    """Test batch processing functionality."""
+
+    @pytest.fixture
+    def batch_dir(self) -> Path:
+        """Create a directory with multiple FASTA files."""
+        temp_dir = tempfile.mkdtemp()
+        batch_path = Path(temp_dir)
+
+        # Create sample FASTA files
+        for i in range(3):
+            fasta_file = batch_path / f"assembly_{i}.fasta"
+            with open(fasta_file, "w") as f:
+                f.write(f">chr{i+1}\n")
+                f.write("ATCGATCG" * 100 + "\n")
+                f.write(f">scaffold{i+1}\n")
+                f.write("GCTAGCTA" * 50 + "\n")
+
+        return batch_path
+
+    def test_batch_processing(self, batch_dir: Path) -> None:
+        """Test processing a directory of FASTA files."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                "--batch",
+                str(batch_dir),
+                "-f",
+                "json",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+        # Check results directory was created
+        results_dir = batch_dir / "chromdetect_results"
+        assert results_dir.exists()
+
+        # Check batch summary was created
+        summary_file = results_dir / "batch_summary.tsv"
+        assert summary_file.exists()
+
+        # Check individual result files
+        json_files = list(results_dir.glob("*.json"))
+        assert len(json_files) == 3
+
+    def test_batch_with_output_dir(self, batch_dir: Path) -> None:
+        """Test batch processing with custom output directory."""
+        output_dir = Path(tempfile.mkdtemp())
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                "--batch",
+                str(batch_dir),
+                "-o",
+                str(output_dir),
+                "-f",
+                "tsv",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+        # Check results were written to custom directory
+        tsv_files = list(output_dir.glob("*.tsv"))
+        # 3 result files + 1 summary
+        assert len(tsv_files) == 4
+
+    def test_batch_empty_directory(self) -> None:
+        """Test batch processing with empty directory."""
+        empty_dir = Path(tempfile.mkdtemp())
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                "--batch",
+                str(empty_dir),
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "No FASTA files found" in result.stderr
+
+    def test_batch_invalid_directory(self) -> None:
+        """Test batch processing with non-existent directory."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                "--batch",
+                "/nonexistent/directory",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "not a directory" in result.stderr
+
+
+class TestCoreFunctions:
+    """Test new core functions."""
+
+    def test_format_bed(self) -> None:
+        """Test BED format function."""
+        from chromdetect.core import format_bed
+
+        results = [
+            ScaffoldInfo(
+                name="chr1",
+                length=1000,
+                classification="chromosome",
+                confidence=0.95,
+                detection_method="test",
+                chromosome_id="1",
+            ),
+        ]
+        bed_output = format_bed(results)
+        lines = bed_output.strip().split("\n")
+        assert len(lines) == 1
+        fields = lines[0].split("\t")
+        assert fields[0] == "chr1"
+        assert fields[1] == "0"
+        assert fields[2] == "1000"
+        assert fields[3] == "chromosome"
+        assert fields[4] == "950"  # 0.95 * 1000
+        assert fields[5] == "."
+
+    def test_format_bed_with_header(self) -> None:
+        """Test BED format with header."""
+        from chromdetect.core import format_bed
+
+        results = [
+            ScaffoldInfo(
+                name="chr1",
+                length=1000,
+                classification="chromosome",
+                confidence=0.95,
+                detection_method="test",
+                chromosome_id="1",
+            ),
+        ]
+        bed_output = format_bed(results, include_header=True)
+        lines = bed_output.strip().split("\n")
+        assert len(lines) == 2
+        assert lines[0].startswith("#")
+
+    def test_format_gff(self) -> None:
+        """Test GFF format function."""
+        from chromdetect.core import format_gff
+
+        results = [
+            ScaffoldInfo(
+                name="chr1",
+                length=1000,
+                classification="chromosome",
+                confidence=0.95,
+                detection_method="test",
+                chromosome_id="1",
+            ),
+        ]
+        gff_output = format_gff(results)
+        lines = gff_output.strip().split("\n")
+        assert lines[0] == "##gff-version 3"
+        fields = lines[1].split("\t")
+        assert fields[0] == "chr1"
+        assert fields[1] == "chromdetect"
+        assert fields[2] == "chromosome"
+        assert fields[3] == "1"
+        assert fields[4] == "1000"
+        assert "ID=chr1" in fields[8]
+        assert "chromosome_id=1" in fields[8]
+
+    def test_write_fasta(self) -> None:
+        """Test FASTA writing function."""
+        from chromdetect.core import write_fasta
+
+        sequences = [
+            ("seq1", "ATCGATCGATCG"),
+            ("seq2", "GCTAGCTAGCTA"),
+        ]
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            write_fasta(sequences, f.name)
+
+            with open(f.name) as out:
+                content = out.read()
+
+            assert ">seq1" in content
+            assert "ATCGATCGATCG" in content
+            assert ">seq2" in content
+            assert "GCTAGCTAGCTA" in content
+
+    def test_write_fasta_line_wrapping(self) -> None:
+        """Test FASTA writing with line wrapping."""
+        from chromdetect.core import write_fasta
+
+        long_seq = "A" * 200
+        sequences = [("seq1", long_seq)]
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            write_fasta(sequences, f.name, line_width=80)
+
+            with open(f.name) as out:
+                lines = out.read().strip().split("\n")
+
+            # Header + 3 lines of 80, 80, 40 = 4 lines total
+            assert len(lines) == 4
+            assert lines[1] == "A" * 80
+            assert lines[2] == "A" * 80
+            assert lines[3] == "A" * 40
+
+    def test_write_fasta_return_string(self) -> None:
+        """Test FASTA writing returning string."""
+        from chromdetect.core import write_fasta
+
+        sequences = [("seq1", "ATCG")]
+        output = write_fasta(sequences, output_path=None)
+
+        assert ">seq1" in output
+        assert "ATCG" in output
+
+    def test_parse_fasta_full_sequence(self) -> None:
+        """Test parsing FASTA with full sequence retention."""
+        from chromdetect.core import parse_fasta
+
+        # Create file with long sequence split across multiple lines (80 chars/line)
+        # This is typical FASTA format
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            f.write(">seq1\n")
+            # Write 200 lines of 80 chars each = 16000 bp
+            for _ in range(200):
+                f.write("ATCGATCG" * 10 + "\n")  # 80 chars per line
+            f.flush()
+            temp_path = f.name
+
+        # Without full sequence (default)
+        scaffolds = parse_fasta(temp_path, keep_full_sequence=False)
+        name, length, seq = scaffolds[0]
+        assert length == 16000
+        # Sample should be approximately 10kb (may vary by line)
+        assert 10000 <= len(seq) <= 10080  # Within one line of limit
+
+        # With full sequence
+        scaffolds = parse_fasta(temp_path, keep_full_sequence=True)
+        name, length, seq = scaffolds[0]
+        assert length == 16000
+        assert len(seq) == 16000  # Full sequence
