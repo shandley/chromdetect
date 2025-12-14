@@ -1,0 +1,33 @@
+"""
+ChromDetect - Chromosome-Level Scaffold Detection Tool
+
+A tool to identify chromosome-level scaffolds in genome assemblies
+using multiple detection strategies to handle inconsistent naming conventions.
+"""
+
+from chromdetect.core import (
+    ScaffoldInfo,
+    AssemblyStats,
+    classify_scaffolds,
+    parse_fasta,
+    detect_by_name,
+    detect_by_size,
+)
+from chromdetect.patterns import (
+    CHROMOSOME_PATTERNS,
+    UNLOCALIZED_PATTERNS,
+    FRAGMENT_PATTERNS,
+)
+
+__version__ = "0.1.0"
+__all__ = [
+    "ScaffoldInfo",
+    "AssemblyStats",
+    "classify_scaffolds",
+    "parse_fasta",
+    "detect_by_name",
+    "detect_by_size",
+    "CHROMOSOME_PATTERNS",
+    "UNLOCALIZED_PATTERNS",
+    "FRAGMENT_PATTERNS",
+]
