@@ -6,10 +6,10 @@ This example shows how to use known karyotype information to improve
 chromosome detection accuracy.
 """
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
-from chromdetect import parse_fasta, classify_scaffolds
+from chromdetect import classify_scaffolds, parse_fasta
 
 
 def main() -> None:

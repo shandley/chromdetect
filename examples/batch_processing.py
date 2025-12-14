@@ -8,8 +8,7 @@ This example shows how to process multiple assemblies and compare results.
 import json
 from pathlib import Path
 
-from chromdetect import parse_fasta, classify_scaffolds
-
+from chromdetect import classify_scaffolds, parse_fasta
 
 # Example species with known karyotypes
 SPECIES_INFO = {

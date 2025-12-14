@@ -8,7 +8,7 @@ in a genome assembly.
 
 from pathlib import Path
 
-from chromdetect import parse_fasta, classify_scaffolds
+from chromdetect import classify_scaffolds, parse_fasta
 
 
 def main() -> None:

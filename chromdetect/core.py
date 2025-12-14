@@ -30,6 +30,8 @@ class ScaffoldInfo:
         confidence: Confidence score from 0.0 to 1.0
         detection_method: Description of how classification was determined
         chromosome_id: Inferred chromosome ID if detected (e.g., "1", "X", "MT")
+        has_telomere_5prime: True if telomere detected at 5' end
+        has_telomere_3prime: True if telomere detected at 3' end
     """
 
     name: str
@@ -38,10 +40,25 @@ class ScaffoldInfo:
     confidence: float  # 0.0 - 1.0
     detection_method: str
     chromosome_id: str | None = None
+    has_telomere_5prime: bool = False
+    has_telomere_3prime: bool = False
+
+    @property
+    def has_telomere(self) -> bool:
+        """Return True if telomere detected at either end."""
+        return self.has_telomere_5prime or self.has_telomere_3prime
+
+    @property
+    def is_t2t(self) -> bool:
+        """Return True if telomeres detected at both ends (telomere-to-telomere)."""
+        return self.has_telomere_5prime and self.has_telomere_3prime
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return asdict(self)
+        d = asdict(self)
+        d["has_telomere"] = self.has_telomere
+        d["is_t2t"] = self.is_t2t
+        return d
 
 
 @dataclass
@@ -60,6 +77,9 @@ class AssemblyStats:
         unplaced_count: Number of unplaced scaffolds
         largest_scaffold: Length of largest scaffold
         gc_content: GC content as fraction (0.0-1.0) if calculated
+        telomere_count: Number of chromosomes with at least one telomere
+        t2t_count: Number of chromosomes with telomeres at both ends
+        quality_score: Assembly chromosome-level quality score (0.0-1.0)
     """
 
     total_scaffolds: int
@@ -73,6 +93,9 @@ class AssemblyStats:
     unplaced_count: int
     largest_scaffold: int
     gc_content: float | None = None
+    telomere_count: int = 0
+    t2t_count: int = 0
+    quality_score: float | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -273,7 +296,10 @@ def calculate_n90(lengths: list[int]) -> int:
     return sorted_lengths[-1]
 
 
-def detect_by_name(name: str) -> tuple[str, float, str, str | None]:
+def detect_by_name(
+    name: str,
+    custom_patterns: tuple | None = None,
+) -> tuple[str, float, str, str | None]:
     """
     Detect scaffold type by name pattern matching.
 
@@ -282,6 +308,8 @@ def detect_by_name(name: str) -> tuple[str, float, str, str | None]:
 
     Args:
         name: Scaffold name from FASTA header
+        custom_patterns: Optional tuple of (chr_patterns, unloc_patterns, frag_patterns)
+                        from merge_patterns(). If None, uses built-in patterns.
 
     Returns:
         Tuple of (classification, confidence, method, chromosome_id)
@@ -290,18 +318,26 @@ def detect_by_name(name: str) -> tuple[str, float, str, str | None]:
         - method: Description of detection method used
         - chromosome_id: Extracted chromosome ID if available (e.g., "1", "X")
     """
+    # Use custom patterns if provided, otherwise use built-in
+    if custom_patterns:
+        chr_patterns, unloc_patterns, frag_patterns = custom_patterns
+    else:
+        chr_patterns = COMPILED_CHROMOSOME_PATTERNS
+        unloc_patterns = COMPILED_UNLOCALIZED
+        frag_patterns = COMPILED_FRAGMENT
+
     # Check for unlocalized patterns first (these override chromosome patterns)
-    for pattern in COMPILED_UNLOCALIZED:
+    for pattern in unloc_patterns:
         if pattern.search(name):
             return ("unlocalized", 0.8, "name_unlocalized", None)
 
     # Check for fragment patterns
-    for pattern in COMPILED_FRAGMENT:
+    for pattern in frag_patterns:
         if pattern.search(name):
             return ("unplaced", 0.6, "name_fragment", None)
 
     # Check for chromosome patterns
-    for pattern, method in COMPILED_CHROMOSOME_PATTERNS:
+    for pattern, method in chr_patterns:
         match = pattern.match(name)
         if match:
             chr_id = match.group(1) if match.lastindex else None
@@ -351,21 +387,120 @@ def detect_by_size(
     return ("other", 0.4, "size_medium")
 
 
+def calculate_quality_score(
+    results: list[ScaffoldInfo],
+    expected_chromosomes: int | None = None,
+    n50: int = 0,
+    total_length: int = 0,
+) -> float:
+    """
+    Calculate an assembly chromosome-level quality score.
+
+    The quality score (0.0-1.0) combines multiple factors:
+    - Classification confidence (average confidence of chromosomes)
+    - Completeness (if expected_chromosomes provided, how close we are)
+    - Telomere completeness (proportion of T2T chromosomes)
+    - Size consistency (chromosome length relative to total)
+
+    Args:
+        results: List of ScaffoldInfo from classification
+        expected_chromosomes: Expected number of chromosomes (karyotype)
+        n50: Assembly N50 value
+        total_length: Total assembly length
+
+    Returns:
+        Quality score from 0.0 to 1.0
+    """
+    if not results:
+        return 0.0
+
+    chromosomes = [r for r in results if r.classification == "chromosome"]
+    if not chromosomes:
+        return 0.0
+
+    # Factor 1: Average classification confidence (weight: 30%)
+    avg_confidence = sum(r.confidence for r in chromosomes) / len(chromosomes)
+    confidence_score = avg_confidence
+
+    # Factor 2: Karyotype completeness (weight: 25%)
+    if expected_chromosomes and expected_chromosomes > 0:
+        completeness_ratio = min(len(chromosomes) / expected_chromosomes, 1.0)
+        # Penalize having too many (over-classification)
+        if len(chromosomes) > expected_chromosomes:
+            over_ratio = expected_chromosomes / len(chromosomes)
+            completeness_score = completeness_ratio * over_ratio
+        else:
+            completeness_score = completeness_ratio
+    else:
+        # Without expected count, give neutral score based on having reasonable count
+        if 10 <= len(chromosomes) <= 100:
+            completeness_score = 0.8
+        elif 1 <= len(chromosomes) < 10 or 100 < len(chromosomes) <= 200:
+            completeness_score = 0.5
+        else:
+            completeness_score = 0.3
+
+    # Factor 3: Telomere completeness (weight: 25%)
+    telo_count = sum(1 for r in chromosomes if r.has_telomere)
+    t2t_count = sum(1 for r in chromosomes if r.is_t2t)
+    if len(chromosomes) > 0:
+        # Weight T2T more heavily than single telomere
+        telomere_score = (0.5 * telo_count / len(chromosomes)) + (
+            0.5 * t2t_count / len(chromosomes)
+        )
+    else:
+        telomere_score = 0.0
+
+    # Factor 4: Size consistency (weight: 20%)
+    # Chromosomes should represent majority of assembly
+    chr_length = sum(r.length for r in chromosomes)
+    if total_length > 0:
+        chr_proportion = chr_length / total_length
+        # Score peaks at ~90% (accounting for unplaced scaffolds)
+        if chr_proportion >= 0.85:
+            size_score = 1.0
+        elif chr_proportion >= 0.5:
+            size_score = 0.5 + (chr_proportion - 0.5) / 0.35 * 0.5
+        else:
+            size_score = chr_proportion
+    else:
+        size_score = 0.5
+
+    # Weighted combination
+    quality = (
+        0.30 * confidence_score
+        + 0.25 * completeness_score
+        + 0.25 * telomere_score
+        + 0.20 * size_score
+    )
+
+    return min(max(quality, 0.0), 1.0)
+
+
 def classify_scaffolds(
     scaffolds: list[tuple[str, int, str]],
     min_chromosome_size: int = 10_000_000,
     expected_chromosomes: int | None = None,
+    detect_telomeres: bool = False,
+    custom_patterns: tuple | None = None,
+    assembly_report: typing.Any | None = None,
 ) -> tuple[list[ScaffoldInfo], AssemblyStats]:
     """
     Classify all scaffolds using multiple detection strategies.
 
     This is the main entry point for scaffold classification. It combines
-    name-based and size-based detection with optional karyotype adjustment.
+    name-based and size-based detection with optional karyotype adjustment
+    and telomere detection.
 
     Args:
         scaffolds: List of (name, length, sequence_sample) tuples from parse_fasta()
         min_chromosome_size: Minimum size in bp to consider chromosome-level
         expected_chromosomes: Known chromosome count (karyotype) for adjustment
+        detect_telomeres: If True, detect telomeric repeats at scaffold ends
+        custom_patterns: Optional tuple of (chr_patterns, unloc_patterns, frag_patterns)
+                        from merge_patterns(). If None, uses built-in patterns.
+        assembly_report: Optional AssemblyReport object for NCBI-based classification.
+                        If provided, uses the report for authoritative classification.
 
     Returns:
         Tuple of (list of ScaffoldInfo, AssemblyStats)
@@ -374,10 +509,13 @@ def classify_scaffolds(
         ValueError: If no scaffolds provided
 
     Example:
-        >>> scaffolds = parse_fasta("assembly.fasta")
-        >>> results, stats = classify_scaffolds(scaffolds, expected_chromosomes=24)
-        >>> print(f"Found {stats.chromosome_count} chromosomes")
+        >>> scaffolds = parse_fasta("assembly.fasta", keep_full_sequence=True)
+        >>> results, stats = classify_scaffolds(scaffolds, detect_telomeres=True)
+        >>> print(f"Found {stats.chromosome_count} chromosomes, {stats.t2t_count} T2T")
     """
+    # Import here to avoid circular imports
+    from chromdetect.telomere import detect_telomere
+
     if not scaffolds:
         raise ValueError("No scaffolds found in assembly")
 
@@ -387,14 +525,85 @@ def classify_scaffolds(
     largest = max(lengths)
     total_length = sum(lengths)
 
+    # Build scaffold sequence lookup for telomere detection
+    scaffold_seqs = {name: seq for name, _length, seq in scaffolds}
+
+    # Pre-compute assembly report classifications if provided
+    report_classifications: dict[str, tuple[str, str | None]] = {}
+    if assembly_report is not None:
+        # assembly_report is an AssemblyReport object
+        from chromdetect.assembly_report import apply_assembly_report
+
+        report_class_list, report_expected = apply_assembly_report(
+            scaffolds, assembly_report
+        )
+        for name, classification, chr_id in report_class_list:
+            if classification != "unknown":
+                report_classifications[name] = (classification, chr_id)
+        # Use report's expected count if not already specified
+        if expected_chromosomes is None and report_expected > 0:
+            expected_chromosomes = report_expected
+
     results = []
 
     for name, length, _seq_sample in scaffolds:
+        # Check if we have an authoritative classification from assembly report
+        if name in report_classifications:
+            report_class, report_chr_id = report_classifications[name]
+            # Assembly report is authoritative - use it directly
+            final_class = report_class
+            final_conf = 0.99  # Very high confidence from NCBI
+            final_method = "ncbi_report"
+            chr_id = report_chr_id
+
+            # Still detect telomeres if requested
+            has_5prime = False
+            has_3prime = False
+            if detect_telomeres and name in scaffold_seqs:
+                seq = scaffold_seqs[name]
+                if len(seq) >= 1000:
+                    telo_result = detect_telomere(seq)
+                    has_5prime = telo_result.has_5prime
+                    has_3prime = telo_result.has_3prime
+
+            results.append(
+                ScaffoldInfo(
+                    name=name,
+                    length=length,
+                    classification=final_class,
+                    confidence=round(final_conf, 3),
+                    detection_method=final_method,
+                    chromosome_id=chr_id,
+                    has_telomere_5prime=has_5prime,
+                    has_telomere_3prime=has_3prime,
+                )
+            )
+            continue
+
         # Get classifications from each method
-        name_class, name_conf, name_method, chr_id = detect_by_name(name)
+        name_class, name_conf, name_method, chr_id = detect_by_name(
+            name, custom_patterns
+        )
         size_class, size_conf, size_method = detect_by_size(
             length, n50, largest, min_chromosome_size
         )
+
+        # Detect telomeres if requested
+        has_5prime = False
+        has_3prime = False
+        telomere_boost = 0.0
+
+        if detect_telomeres and name in scaffold_seqs:
+            seq = scaffold_seqs[name]
+            if len(seq) >= 1000:  # Need reasonable sequence for telomere detection
+                telo_result = detect_telomere(seq)
+                has_5prime = telo_result.has_5prime
+                has_3prime = telo_result.has_3prime
+                # Boost confidence if telomeres detected
+                if telo_result.is_complete:
+                    telomere_boost = 0.15
+                elif telo_result.has_telomere:
+                    telomere_boost = 0.08
 
         # Combine classifications with priority rules
         if name_conf >= 0.8:
@@ -429,6 +638,11 @@ def classify_scaffolds(
             final_conf = max(name_conf, size_conf) * 0.8
             final_method = name_method
 
+        # Apply telomere boost to confidence
+        if telomere_boost > 0 and final_class == "chromosome":
+            final_conf = min(0.99, final_conf + telomere_boost)
+            final_method += "+telomere"
+
         results.append(
             ScaffoldInfo(
                 name=name,
@@ -437,6 +651,8 @@ def classify_scaffolds(
                 confidence=round(final_conf, 3),
                 detection_method=final_method,
                 chromosome_id=chr_id,
+                has_telomere_5prime=has_5prime,
+                has_telomere_3prime=has_3prime,
             )
         )
 
@@ -453,6 +669,18 @@ def classify_scaffolds(
     all_seqs = "".join(s[2] for s in scaffolds[:100])
     gc_content = calculate_gc(all_seqs)
 
+    # Telomere statistics
+    telomere_count = sum(1 for r in chromosomes if r.has_telomere)
+    t2t_count = sum(1 for r in chromosomes if r.is_t2t)
+
+    # Calculate quality score
+    quality_score = calculate_quality_score(
+        results,
+        expected_chromosomes=expected_chromosomes,
+        n50=n50,
+        total_length=total_length,
+    )
+
     stats = AssemblyStats(
         total_scaffolds=len(results),
         total_length=total_length,
@@ -465,6 +693,9 @@ def classify_scaffolds(
         unplaced_count=len([r for r in results if r.classification == "unplaced"]),
         largest_scaffold=largest,
         gc_content=round(gc_content, 4) if gc_content else None,
+        telomere_count=telomere_count,
+        t2t_count=t2t_count,
+        quality_score=round(quality_score, 3) if quality_score else None,
     )
 
     return results, stats

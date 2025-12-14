@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from chromdetect import __version__
+from chromdetect.assembly_report import parse_assembly_report
 from chromdetect.core import (
     AssemblyStats,
     ScaffoldInfo,
@@ -24,6 +25,8 @@ from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
     FRAGMENT_PATTERNS,
     UNLOCALIZED_PATTERNS,
+    load_custom_patterns,
+    merge_patterns,
 )
 
 # Exit codes following sysexits.h conventions
@@ -123,15 +126,32 @@ def format_output(
         if stats.gc_content:
             lines.append(f"GC content:          {stats.gc_content*100:.1f}%")
 
+        # Telomere information
+        if stats.telomere_count > 0 or stats.t2t_count > 0:
+            lines.append("")
+            lines.append("Telomere Detection:")
+            lines.append(f"  With telomeres:    {stats.telomere_count:,}")
+            lines.append(f"  T2T chromosomes:   {stats.t2t_count:,}")
+
+        # Quality score
+        if stats.quality_score is not None:
+            lines.append("")
+            lines.append(f"Quality Score:       {stats.quality_score:.3f}")
+
         lines.extend(["", "-" * 60, "Top 20 Scaffolds:", "-" * 60])
 
         # Show top scaffolds
         top_results = sorted(results, key=lambda r: -r.length)[:20]
         for r in top_results:
             chr_str = f" ({r.chromosome_id})" if r.chromosome_id else ""
+            telo_str = ""
+            if r.has_telomere_5prime and r.has_telomere_3prime:
+                telo_str = " [T2T]"
+            elif r.has_telomere_5prime or r.has_telomere_3prime:
+                telo_str = " [T]"
             lines.append(
                 f"  {r.name:<30} {r.length:>12,} bp  "
-                f"{r.classification:<12} {r.confidence:.2f}{chr_str}"
+                f"{r.classification:<12} {r.confidence:.2f}{chr_str}{telo_str}"
             )
 
         return "\n".join(lines)
@@ -140,11 +160,17 @@ def format_output(
         raise ValueError(f"Unknown format: {output_format}")
 
 
-def process_batch(args: argparse.Namespace) -> None:
+def process_batch(
+    args: argparse.Namespace,
+    custom_patterns: tuple | None = None,
+    assembly_report: object | None = None,
+) -> None:
     """Process all FASTA files in a directory.
 
     Args:
         args: Parsed command-line arguments
+        custom_patterns: Optional custom patterns tuple from merge_patterns()
+        assembly_report: Optional AssemblyReport for scaffold classification
     """
     batch_dir = args.batch
     if not batch_dir.is_dir():
@@ -197,7 +223,10 @@ def process_batch(args: argparse.Namespace) -> None:
 
         try:
             # Parse FASTA
-            need_full_sequences = args.extract_chromosomes is not None
+            need_full_sequences = (
+                args.extract_chromosomes is not None
+                or getattr(args, "detect_telomeres", False)
+            )
             scaffolds = parse_fasta(fasta_path, need_full_sequences)
 
             # Classify
@@ -205,6 +234,9 @@ def process_batch(args: argparse.Namespace) -> None:
                 scaffolds,
                 min_chromosome_size=args.min_size,
                 expected_chromosomes=args.karyotype,
+                detect_telomeres=getattr(args, "detect_telomeres", False),
+                custom_patterns=custom_patterns,
+                assembly_report=assembly_report,
             )
 
             # Handle chromosome extraction if requested
@@ -359,6 +391,23 @@ Supported naming conventions:
         help="Process all FASTA files in directory (batch mode)",
     )
     parser.add_argument(
+        "--detect-telomeres",
+        action="store_true",
+        help="Detect telomeric repeats at scaffold ends (requires full sequences)",
+    )
+    parser.add_argument(
+        "--patterns",
+        type=Path,
+        metavar="FILE",
+        help="Custom patterns file (YAML or JSON) for scaffold name matching",
+    )
+    parser.add_argument(
+        "--assembly-report",
+        type=Path,
+        metavar="FILE",
+        help="NCBI assembly report file for authoritative scaffold classification",
+    )
+    parser.add_argument(
         "--min-confidence",
         type=float,
         default=0.0,
@@ -405,7 +454,33 @@ Supported naming conventions:
 
     # Handle batch mode
     if args.batch:
-        process_batch(args)
+        # Load custom patterns for batch mode
+        batch_patterns = None
+        if args.patterns:
+            if not args.patterns.exists():
+                print(f"Error: Patterns file not found: {args.patterns}", file=sys.stderr)
+                sys.exit(EXIT_NOINPUT)
+            try:
+                chr_pats, unloc_pats, frag_pats = load_custom_patterns(args.patterns)
+                batch_patterns = merge_patterns(chr_pats, unloc_pats, frag_pats)
+            except ValueError as e:
+                print(f"Error: Invalid patterns file: {e}", file=sys.stderr)
+                sys.exit(EXIT_DATAERR)
+        # Load assembly report for batch mode
+        batch_report = None
+        if args.assembly_report:
+            if not args.assembly_report.exists():
+                print(
+                    f"Error: Assembly report file not found: {args.assembly_report}",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_NOINPUT)
+            try:
+                batch_report = parse_assembly_report(args.assembly_report)
+            except ValueError as e:
+                print(f"Error: Invalid assembly report: {e}", file=sys.stderr)
+                sys.exit(EXIT_DATAERR)
+        process_batch(args, batch_patterns, batch_report)
         sys.exit(EXIT_SUCCESS)
 
     # Require fasta argument for normal operation
@@ -415,12 +490,59 @@ Supported naming conventions:
     # Handle conflicting verbosity flags
     verbose = args.verbose and not args.quiet
 
+    # Load custom patterns if provided
+    custom_patterns = None
+    if args.patterns:
+        if not args.patterns.exists():
+            print(f"Error: Patterns file not found: {args.patterns}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+        try:
+            chr_pats, unloc_pats, frag_pats = load_custom_patterns(args.patterns)
+            custom_patterns = merge_patterns(chr_pats, unloc_pats, frag_pats)
+            if verbose:
+                print(
+                    f"Loaded {len(chr_pats)} custom chromosome patterns, "
+                    f"{len(unloc_pats)} unlocalized patterns, "
+                    f"{len(frag_pats)} fragment patterns",
+                    file=sys.stderr,
+                )
+        except ValueError as e:
+            print(f"Error: Invalid patterns file: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+
+    # Load assembly report if provided
+    assembly_report = None
+    if args.assembly_report:
+        if not args.assembly_report.exists():
+            print(
+                f"Error: Assembly report file not found: {args.assembly_report}",
+                file=sys.stderr,
+            )
+            sys.exit(EXIT_NOINPUT)
+        try:
+            assembly_report = parse_assembly_report(args.assembly_report)
+            if verbose:
+                print(
+                    f"Loaded assembly report: {assembly_report.assembly_name or 'unknown'}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"  {len(assembly_report.entries)} sequences, "
+                    f"{assembly_report.get_expected_chromosome_count()} chromosomes",
+                    file=sys.stderr,
+                )
+        except ValueError as e:
+            print(f"Error: Invalid assembly report: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+
     # Handle stdin vs file input
     use_stdin = args.fasta == "-"
     fasta_path = None if use_stdin else Path(args.fasta)
 
-    # Determine if we need full sequences (for extraction)
-    need_full_sequences = args.extract_chromosomes is not None
+    # Determine if we need full sequences (for extraction or telomere detection)
+    need_full_sequences = (
+        args.extract_chromosomes is not None or args.detect_telomeres
+    )
 
     if verbose:
         print(f"ChromDetect {__version__}", file=sys.stderr)
@@ -473,6 +595,9 @@ Supported naming conventions:
         scaffolds,
         min_chromosome_size=args.min_size,
         expected_chromosomes=args.karyotype,
+        detect_telomeres=args.detect_telomeres,
+        custom_patterns=custom_patterns,
+        assembly_report=assembly_report,
     )
 
     if verbose:
@@ -481,6 +606,11 @@ Supported naming conventions:
         print(f"  Unlocalized: {stats.unlocalized_count}", file=sys.stderr)
         print(f"  Unplaced: {stats.unplaced_count}", file=sys.stderr)
         print(f"  N50: {stats.n50:,} bp", file=sys.stderr)
+        if args.detect_telomeres:
+            print(f"  With telomeres: {stats.telomere_count}", file=sys.stderr)
+            print(f"  T2T chromosomes: {stats.t2t_count}", file=sys.stderr)
+        if stats.quality_score is not None:
+            print(f"  Quality score: {stats.quality_score:.3f}", file=sys.stderr)
 
     # Handle chromosome extraction
     if args.extract_chromosomes:

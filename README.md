@@ -42,6 +42,8 @@ ChromDetect uses multiple complementary strategies to identify chromosome-level 
 2. **Size-based detection** - Large scaffolds are typically chromosomes
 3. **N50-based detection** - Scaffolds contributing to N50 are typically chromosome-level
 4. **Karyotype-informed detection** - Use known chromosome count to adjust classifications
+5. **Telomere detection** - Identify T2T chromosomes by detecting telomeric repeats at scaffold ends
+6. **NCBI assembly report** - Use official NCBI reports for authoritative classification
 
 ## Installation
 
@@ -83,12 +85,24 @@ chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
 
 # Batch process multiple assemblies
 chromdetect --batch assemblies_dir/ --output results_dir/
+
+# Detect telomeres at scaffold ends (T2T detection)
+chromdetect assembly.fasta --detect-telomeres
+
+# Use custom naming patterns
+chromdetect assembly.fasta --patterns custom_patterns.yaml
+
+# Use NCBI assembly report for accurate classification
+chromdetect assembly.fasta --assembly-report GCF_000001405.assembly_report.txt
 ```
 
 ### Python API
 
 ```python
-from chromdetect import parse_fasta, classify_scaffolds, write_fasta, format_bed, format_gff
+from chromdetect import (
+    parse_fasta, classify_scaffolds, write_fasta, format_bed, format_gff,
+    detect_telomere, parse_assembly_report, calculate_quality_score
+)
 
 # Parse and classify
 scaffolds = parse_fasta("assembly.fasta.gz")
@@ -114,6 +128,19 @@ results, stats = classify_scaffolds(scaffolds)
 chr_seqs = [(name, seq) for name, length, seq in scaffolds
             if any(r.name == name and r.classification == "chromosome" for r in results)]
 write_fasta(chr_seqs, "chromosomes.fasta")
+
+# Enable telomere detection for T2T identification
+scaffolds = parse_fasta("assembly.fasta", keep_full_sequence=True)
+results, stats = classify_scaffolds(scaffolds, detect_telomeres=True)
+for r in results:
+    if r.classification == "chromosome":
+        status = "T2T" if r.is_t2t else ("Telomere" if r.has_telomere else "")
+        print(f"{r.name}: {r.length:,} bp {status}")
+
+# Use NCBI assembly report for authoritative classification
+report = parse_assembly_report("assembly_report.txt")
+results, stats = classify_scaffolds(scaffolds, assembly_report=report)
+print(f"Quality score: {stats.quality_score:.3f}")
 ```
 
 ## Output Formats
@@ -138,6 +165,12 @@ Scaffold Classification:
 
 Chromosome N50:      118,234,567 bp (118.2 Mb)
 GC content:          41.2%
+
+Telomere Detection:
+  With telomeres:    22
+  T2T chromosomes:   18
+
+Quality Score:       0.847
 ```
 
 ### JSON
@@ -204,7 +237,13 @@ chr1    chromdetect    chromosome    1    198765432    0.950    .    .    ID=chr
 | `-c, --chromosomes-only` | Only output chromosome-level scaffolds |
 | `--extract-chromosomes` | Extract chromosome sequences to a FASTA file |
 | `--batch` | Process all FASTA files in a directory |
+| `--detect-telomeres` | Detect telomeric repeats at scaffold ends for T2T identification |
+| `--patterns` | Custom patterns file (YAML or JSON) for scaffold name matching |
+| `--assembly-report` | NCBI assembly report file for authoritative classification |
+| `--min-confidence` | Minimum confidence threshold (0.0-1.0) to include scaffolds |
+| `--min-length` | Minimum scaffold length (bp) to include in output |
 | `-q, --quiet` | Suppress progress messages |
+| `-v, --verbose` | Show detailed processing information |
 
 ## Supported Naming Conventions
 
@@ -321,6 +360,27 @@ Example:
 CHROMOSOME_PATTERNS.append(
     (r'^MyConvention_(\d+)$', 'my_convention'),
 )
+```
+
+### Using Custom Patterns
+
+You can also use custom patterns without modifying the source code:
+
+```yaml
+# custom_patterns.yaml
+chromosome_patterns:
+  - pattern: "^MyScaffold_(\\d+)$"
+    name: "my_scaffold"
+  - pattern: "^CustomChr_(\\d+)$"
+    name: "custom_chr"
+unlocalized_patterns:
+  - my_random
+fragment_patterns:
+  - my_contig
+```
+
+```bash
+chromdetect assembly.fasta --patterns custom_patterns.yaml
 ```
 
 ## Citation
