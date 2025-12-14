@@ -109,9 +109,9 @@ def parse_fasta(fasta_path: Path | str) -> list[tuple[str, int, str]]:
     current_seq_sample: list[str] = []
     sample_limit = 10000  # Only keep first 10kb for GC calculation
 
-    with opener(fasta_path, mode) as f:
-        for line in f:
-            line = line.strip()
+    with opener(fasta_path, mode, encoding="utf-8") as f:
+        for raw_line in f:
+            line: str = str(raw_line).strip()
             if line.startswith(">"):
                 # Save previous scaffold
                 if current_name is not None:
