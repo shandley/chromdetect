@@ -1,11 +1,21 @@
-# ChromDetect
+<p align="center">
+  <img src="chromdetect_hex_logo.jpeg" alt="ChromDetect Logo" width="200"/>
+</p>
 
-[![PyPI version](https://badge.fury.io/py/chromdetect.svg)](https://badge.fury.io/py/chromdetect)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/shandley/chromdetect/actions/workflows/test.yml/badge.svg)](https://github.com/shandley/chromdetect/actions/workflows/test.yml)
+<h1 align="center">ChromDetect</h1>
 
-**Detect chromosome-level scaffolds in genome assemblies with inconsistent naming conventions.**
+<p align="center">
+  <a href="https://badge.fury.io/py/chromdetect"><img src="https://badge.fury.io/py/chromdetect.svg" alt="PyPI version"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/shandley/chromdetect/actions/workflows/test.yml"><img src="https://github.com/shandley/chromdetect/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+</p>
+
+<p align="center">
+  <strong>Detect chromosome-level scaffolds in genome assemblies with inconsistent naming conventions.</strong>
+</p>
+
+---
 
 ## The Problem
 
@@ -29,6 +39,9 @@ This inconsistency makes automated analysis and cross-species comparisons diffic
 | Pattern-based detection | ❌ | ❌ | ❌ | ✅ |
 | Size-based detection | ❌ | ❌ | ❌ | ✅ |
 | Karyotype-aware | ❌ | ❌ | ❌ | ✅ |
+| Telomere detection (T2T) | ❌ | ❌ | ❌ | ✅ |
+| Quality scoring | ❌ | ❌ | ❌ | ✅ |
+| NCBI report integration | ❌ | ❌ | ❌ | ✅ |
 | Multiple output formats | ✅ | ❌ | ✅ | ✅ |
 | Zero dependencies | ❌ | ✅ | ❌ | ✅ |
 
@@ -280,6 +293,30 @@ When `--karyotype` is provided:
 - If too many candidates: demote lowest-confidence chromosomes
 - If too few candidates: promote largest unplaced scaffolds
 
+### Telomere Detection
+
+When `--detect-telomeres` is enabled, ChromDetect searches scaffold ends for telomeric repeat motifs:
+
+| Organism Type | 5' Motif | 3' Motif |
+|--------------|----------|----------|
+| Vertebrates | CCCTAA | TTAGGG |
+| Plants (Arabidopsis) | CCCTAAA | TTTAGGG |
+| Insects (Bombyx) | CCTAA | TTAGG |
+| Nematodes | GCCTAA | TTAGGC |
+
+Scaffolds with telomeres at both ends are marked as **T2T** (telomere-to-telomere), indicating complete chromosome assembly.
+
+### Quality Score
+
+ChromDetect calculates an overall assembly quality score (0.0-1.0) based on:
+
+- **Classification confidence** (30%) - Average confidence of chromosome classifications
+- **Karyotype completeness** (25%) - How close to expected chromosome count
+- **Telomere completeness** (25%) - Proportion of T2T chromosomes (when `--detect-telomeres` used)
+- **Size consistency** (20%) - Chromosome length relative to total assembly
+
+A score > 0.8 indicates a high-quality chromosome-level assembly.
+
 ## Use Cases
 
 ### VGP Assembly Validation
@@ -338,6 +375,29 @@ chromdetect assembly.fasta \
     --karyotype 24 \
     --extract-chromosomes chromosomes.fasta \
     --format json --output report.json
+```
+
+### T2T Assembly Validation
+
+```bash
+# Detect telomeres at scaffold ends to identify T2T chromosomes
+chromdetect assembly.fasta --detect-telomeres --format summary
+
+# Full T2T analysis with quality scoring
+chromdetect assembly.fasta \
+    --detect-telomeres \
+    --karyotype 23 \
+    --format json --output t2t_report.json
+```
+
+### Using NCBI Assembly Reports
+
+```bash
+# Download an assembly report from NCBI
+# https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.40
+
+# Use it for authoritative scaffold classification
+chromdetect GRCh38.fasta --assembly-report GCF_000001405.40_GRCh38.p14_assembly_report.txt
 ```
 
 ## Contributing
