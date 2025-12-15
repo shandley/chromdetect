@@ -1,0 +1,29 @@
+{
+  "title": "ChromDetect: A utility for classifying scaffolds in genome assemblies",
+  "description": "ChromDetect is a Python utility that classifies scaffolds in genome assemblies as chromosomes, unlocalized, or unplaced sequences based on naming conventions and size heuristics.",
+  "creators": [
+    {
+      "name": "Handley, Scott A.",
+      "affiliation": "Washington University School of Medicine",
+      "orcid": "0000-0002-2143-6570"
+    }
+  ],
+  "keywords": [
+    "genomics",
+    "bioinformatics",
+    "genome assembly",
+    "chromosome",
+    "scaffolds",
+    "Python"
+  ],
+  "license": "MIT",
+  "upload_type": "software",
+  "access_right": "open",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/shandley/chromdetect",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

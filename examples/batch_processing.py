@@ -127,7 +127,7 @@ def main() -> None:
 
 def create_mock_assemblies(assembly_dir: Path) -> None:
     """Create mock assembly files for demonstration."""
-    for name, info in SPECIES_INFO.items():
+    for _name, info in SPECIES_INFO.items():
         fasta_path = assembly_dir / info["file"]
         n_chr = info["karyotype"]
 

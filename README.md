@@ -12,51 +12,30 @@
 </p>
 
 <p align="center">
-  <strong>Detect chromosome-level scaffolds in genome assemblies with inconsistent naming conventions.</strong>
+  <strong>A utility to classify scaffolds in genome assemblies based on naming conventions and size.</strong>
 </p>
 
 ---
 
-## The Problem
+## What It Does
 
-Genome assemblies use wildly inconsistent naming conventions for chromosome-level scaffolds:
+ChromDetect is a simple utility that classifies scaffolds in genome assemblies as chromosomes, unlocalized, or unplaced sequences. It works by:
 
-- `Super_scaffold_1`, `Superscaffold_1`, `SUPER_1`
-- `chr1`, `chromosome_1`, `Chr_1`
-- `LG_1` (linkage groups)
-- `scaffold_1_cov50` (coverage-annotated)
-- `HiC_scaffold_1`, `Scaffold_1_RaGOO`
-- `NC_000001.11`, `CM000001.1` (NCBI accessions)
+1. **Matching scaffold names** against common naming patterns (`chr1`, `Super_scaffold_1`, `LG_1`, `NC_*`, etc.)
+2. **Using size heuristics** (large scaffolds are likely chromosomes)
+3. **Adjusting for expected karyotype** if you know the chromosome count
 
-This inconsistency makes automated analysis and cross-species comparisons difficult. Existing QC tools like QUAST report metrics but don't classify scaffolds. Scaffolding tools like LACHESIS create assemblies but don't help interpret existing ones.
+## Why Use It?
 
-## Why ChromDetect?
+Genome assemblies use inconsistent naming conventions:
 
-| Feature | QUAST | assembly-stats | gfastats | **ChromDetect** |
-|---------|-------|----------------|----------|-----------------|
-| N50/N90 statistics | ✅ | ✅ | ✅ | ✅ |
-| Scaffold classification | ❌ | ❌ | ❌ | ✅ |
-| Pattern-based detection | ❌ | ❌ | ❌ | ✅ |
-| Size-based detection | ❌ | ❌ | ❌ | ✅ |
-| Karyotype-aware | ❌ | ❌ | ❌ | ✅ |
-| Telomere detection (T2T) | ❌ | ❌ | ❌ | ✅ |
-| Quality scoring | ❌ | ❌ | ❌ | ✅ |
-| NCBI report integration | ❌ | ❌ | ❌ | ✅ |
-| Multiple output formats | ✅ | ❌ | ✅ | ✅ |
-| Zero dependencies | ❌ | ✅ | ❌ | ✅ |
+```
+Super_scaffold_1, chr1, LG_1, HiC_scaffold_1, NC_000001.11, scaffold_1_cov50...
+```
 
-ChromDetect fills a gap in the genomics toolkit: **automatically identifying which scaffolds represent chromosomes** rather than just reporting assembly statistics.
+If you need to quickly identify which scaffolds are chromosomes—for filtering, statistics, or downstream analysis—ChromDetect automates that classification.
 
-## The Solution
-
-ChromDetect uses multiple complementary strategies to identify chromosome-level scaffolds:
-
-1. **Name-based detection** - Regex patterns for 15+ common naming conventions
-2. **Size-based detection** - Large scaffolds are typically chromosomes
-3. **N50-based detection** - Scaffolds contributing to N50 are typically chromosome-level
-4. **Karyotype-informed detection** - Use known chromosome count to adjust classifications
-5. **Telomere detection** - Identify T2T chromosomes by detecting telomeric repeats at scaffold ends
-6. **NCBI assembly report** - Use official NCBI reports for authoritative classification
+**This is a utility tool, not a validator.** It doesn't detect misassemblies or verify correctness. For assembly QC, use tools like QUAST or Merqury.
 
 ## Installation
 
@@ -71,6 +50,46 @@ git clone https://github.com/shandley/chromdetect.git
 cd chromdetect
 pip install -e .
 ```
+
+## Example Data
+
+ChromDetect includes synthetic test assemblies in the `examples/` directory:
+
+```bash
+# Try it immediately after installation
+chromdetect examples/synthetic_assembly.fasta
+
+# Compare two assembly versions
+chromdetect examples/synthetic_assembly.fasta --compare examples/synthetic_assembly_v2.fasta
+```
+
+### Downloading Real Genome Assemblies
+
+For testing with real data, we recommend these small, well-annotated assemblies:
+
+**Saccharomyces cerevisiae S288C** (Yeast, ~12 Mb, 16 chromosomes):
+```bash
+# Using NCBI datasets CLI (install: pip install ncbi-datasets-cli)
+datasets download genome accession GCF_000146045.2 --include genome
+unzip ncbi_dataset.zip
+chromdetect ncbi_dataset/data/GCF_000146045.2/GCF_000146045.2_R64_genomic.fna
+```
+
+**Caenorhabditis elegans** (Nematode, ~100 Mb, 6 chromosomes):
+```bash
+datasets download genome accession GCF_000002985.6 --include genome
+unzip ncbi_dataset.zip
+chromdetect ncbi_dataset/data/GCF_000002985.6/*.fna
+```
+
+**Arabidopsis thaliana** (Plant, ~135 Mb, 5 chromosomes):
+```bash
+datasets download genome accession GCF_000001735.4 --include genome
+unzip ncbi_dataset.zip
+chromdetect ncbi_dataset/data/GCF_000001735.4/*.fna --karyotype 5
+```
+
+For more test data options, see [NCBI Datasets](https://www.ncbi.nlm.nih.gov/datasets/) or [GenomeArk](https://genomeark.org) (VGP assemblies).
 
 ## Quick Start
 
@@ -99,8 +118,11 @@ chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
 # Batch process multiple assemblies
 chromdetect --batch assemblies_dir/ --output results_dir/
 
-# Detect telomeres at scaffold ends (T2T detection)
-chromdetect assembly.fasta --detect-telomeres
+# Compare two assemblies side-by-side
+chromdetect assembly_v1.fasta --compare assembly_v2.fasta
+
+# Generate visual HTML report
+chromdetect assembly.fasta --format html -o report.html
 
 # Use custom naming patterns
 chromdetect assembly.fasta --patterns custom_patterns.yaml
@@ -112,19 +134,34 @@ chromdetect assembly.fasta --assembly-report GCF_000001405.assembly_report.txt
 ### Python API
 
 ```python
+# Simple one-liner classification (recommended for most use cases)
+from chromdetect import classify_fasta, compare_fasta_files
+
+results, stats = classify_fasta("assembly.fasta")
+print(f"Found {stats.chromosome_count} chromosomes")
+print(f"N50: {stats.n50 / 1e6:.1f} Mb")
+
+# Compare two assemblies
+comparison = compare_fasta_files("assembly_v1.fasta", "assembly_v2.fasta")
+print(f"Shared chromosomes: {len(comparison.shared_chromosomes)}")
+print(f"N50 change: {comparison.summary()['n50_difference']:,} bp")
+```
+
+For more control, use the lower-level API:
+
+```python
 from chromdetect import (
     parse_fasta, classify_scaffolds, write_fasta, format_bed, format_gff,
-    detect_telomere, parse_assembly_report, calculate_quality_score
+    parse_assembly_report
 )
 
-# Parse and classify
+# Parse and classify with options
 scaffolds = parse_fasta("assembly.fasta.gz")
 results, stats = classify_scaffolds(scaffolds, expected_chromosomes=24)
 
 # Print summary
 print(f"Found {stats.chromosome_count} chromosomes")
 print(f"Total assembly: {stats.total_length / 1e9:.2f} Gb")
-print(f"N50: {stats.n50 / 1e6:.1f} Mb")
 
 # Access individual scaffold classifications
 for r in results:
@@ -135,25 +172,9 @@ for r in results:
 bed_output = format_bed(results)
 gff_output = format_gff(results)
 
-# Extract chromosome sequences (requires full sequence parsing)
-scaffolds = parse_fasta("assembly.fasta", keep_full_sequence=True)
-results, stats = classify_scaffolds(scaffolds)
-chr_seqs = [(name, seq) for name, length, seq in scaffolds
-            if any(r.name == name and r.classification == "chromosome" for r in results)]
-write_fasta(chr_seqs, "chromosomes.fasta")
-
-# Enable telomere detection for T2T identification
-scaffolds = parse_fasta("assembly.fasta", keep_full_sequence=True)
-results, stats = classify_scaffolds(scaffolds, detect_telomeres=True)
-for r in results:
-    if r.classification == "chromosome":
-        status = "T2T" if r.is_t2t else ("Telomere" if r.has_telomere else "")
-        print(f"{r.name}: {r.length:,} bp {status}")
-
 # Use NCBI assembly report for authoritative classification
 report = parse_assembly_report("assembly_report.txt")
 results, stats = classify_scaffolds(scaffolds, assembly_report=report)
-print(f"Quality score: {stats.quality_score:.3f}")
 ```
 
 ## Output Formats
@@ -178,12 +199,6 @@ Scaffold Classification:
 
 Chromosome N50:      118,234,567 bp (118.2 Mb)
 GC content:          41.2%
-
-Telomere Detection:
-  With telomeres:    22
-  T2T chromosomes:   18
-
-Quality Score:       0.847
 ```
 
 ### JSON
@@ -243,14 +258,14 @@ chr1    chromdetect    chromosome    1    198765432    0.950    .    .    ID=chr
 
 | Option | Description |
 |--------|-------------|
-| `-f, --format` | Output format: `summary`, `json`, `tsv`, `bed`, `gff` (default: summary) |
+| `-f, --format` | Output format: `summary`, `json`, `tsv`, `bed`, `gff`, `html` (default: summary) |
 | `-o, --output` | Write output to file instead of stdout |
 | `-k, --karyotype` | Expected chromosome count for karyotype-informed detection |
 | `-s, --min-size` | Minimum size (bp) to consider chromosome-level (default: 10Mb) |
 | `-c, --chromosomes-only` | Only output chromosome-level scaffolds |
 | `--extract-chromosomes` | Extract chromosome sequences to a FASTA file |
 | `--batch` | Process all FASTA files in a directory |
-| `--detect-telomeres` | Detect telomeric repeats at scaffold ends for T2T identification |
+| `--compare` | Compare with a second assembly (side-by-side analysis) |
 | `--patterns` | Custom patterns file (YAML or JSON) for scaffold name matching |
 | `--assembly-report` | NCBI assembly report file for authoritative classification |
 | `--min-confidence` | Minimum confidence threshold (0.0-1.0) to include scaffolds |
@@ -293,52 +308,33 @@ When `--karyotype` is provided:
 - If too many candidates: demote lowest-confidence chromosomes
 - If too few candidates: promote largest unplaced scaffolds
 
-### Telomere Detection
-
-When `--detect-telomeres` is enabled, ChromDetect searches scaffold ends for telomeric repeat motifs:
-
-| Organism Type | 5' Motif | 3' Motif |
-|--------------|----------|----------|
-| Vertebrates | CCCTAA | TTAGGG |
-| Plants (Arabidopsis) | CCCTAAA | TTTAGGG |
-| Insects (Bombyx) | CCTAA | TTAGG |
-| Nematodes | GCCTAA | TTAGGC |
-
-Scaffolds with telomeres at both ends are marked as **T2T** (telomere-to-telomere), indicating complete chromosome assembly.
-
-### Quality Score
-
-ChromDetect calculates an overall assembly quality score (0.0-1.0) based on:
-
-- **Classification confidence** (30%) - Average confidence of chromosome classifications
-- **Karyotype completeness** (25%) - How close to expected chromosome count
-- **Telomere completeness** (25%) - Proportion of T2T chromosomes (when `--detect-telomeres` used)
-- **Size consistency** (20%) - Chromosome length relative to total assembly
-
-A score > 0.8 indicates a high-quality chromosome-level assembly.
-
 ## Use Cases
 
-### VGP Assembly Validation
+### VGP Assembly Classification
 
 ```bash
-# Validate a VGP curated assembly
+# Classify scaffolds in a VGP curated assembly
 chromdetect species.pri.cur.fasta.gz --karyotype 24 --format json
 ```
 
-### Cross-Species Comparison
+### Multi-Assembly Classification
 
 ```python
-from chromdetect import parse_fasta, classify_scaffolds
+from chromdetect import classify_fasta
 
-species_files = ["human.fa", "mouse.fa", "zebrafish.fa"]
-karyotypes = [23, 20, 25]
+# Classify multiple assemblies independently
+species = [
+    ("human.fa", 23),
+    ("mouse.fa", 20),
+    ("zebrafish.fa", 25),
+]
 
-for fasta, n_chr in zip(species_files, karyotypes):
-    scaffolds = parse_fasta(fasta)
-    results, stats = classify_scaffolds(scaffolds, expected_chromosomes=n_chr)
-    print(f"{fasta}: {stats.chromosome_count} chromosomes detected")
+for fasta, expected_chr in species:
+    results, stats = classify_fasta(fasta)
+    print(f"{fasta}: {stats.chromosome_count} chromosomes detected (expected {expected_chr})")
 ```
+
+Note: This classifies each assembly independently. ChromDetect does not perform synteny analysis or identify homologous chromosomes across species.
 
 ### Pipeline Integration
 
@@ -377,19 +373,6 @@ chromdetect assembly.fasta \
     --format json --output report.json
 ```
 
-### T2T Assembly Validation
-
-```bash
-# Detect telomeres at scaffold ends to identify T2T chromosomes
-chromdetect assembly.fasta --detect-telomeres --format summary
-
-# Full T2T analysis with quality scoring
-chromdetect assembly.fasta \
-    --detect-telomeres \
-    --karyotype 23 \
-    --format json --output t2t_report.json
-```
-
 ### Using NCBI Assembly Reports
 
 ```bash
@@ -399,6 +382,20 @@ chromdetect assembly.fasta \
 # Use it for authoritative scaffold classification
 chromdetect GRCh38.fasta --assembly-report GCF_000001405.40_GRCh38.p14_assembly_report.txt
 ```
+
+## Limitations
+
+ChromDetect uses heuristics and pattern matching—it has inherent limitations:
+
+- **Not a validator:** ChromDetect classifies scaffolds but cannot detect misassemblies, inversions, or sequence errors. Use QUAST, Merqury, or similar tools for assembly validation.
+
+- **Pattern-dependent:** Classification relies on naming conventions. Unusual or custom naming schemes may not be recognized without custom patterns.
+
+- **Size heuristics are approximate:** A 50 Mb scaffold is assumed to be chromosome-level, but could be a misassembly or concatenated contigs.
+
+- **No reference comparison:** ChromDetect doesn't compare against reference genomes, so it cannot identify missing chromosomes or structural variants.
+
+For critical applications, combine ChromDetect with comprehensive QC tools and manual curation.
 
 ## Contributing
 
@@ -445,12 +442,21 @@ chromdetect assembly.fasta --patterns custom_patterns.yaml
 
 ## Citation
 
-If you use ChromDetect in your research, please cite:
+If you use ChromDetect in your research, please cite it using the metadata from our [CITATION.cff](CITATION.cff) file:
 
+```bibtex
+@software{chromdetect,
+  author = {Handley, Scott A.},
+  title = {ChromDetect: A utility for classifying scaffolds in genome assemblies},
+  url = {https://github.com/shandley/chromdetect},
+  version = {0.5.0},
+  year = {2024}
+}
 ```
-ChromDetect: Chromosome-level scaffold detection for genome assemblies
-https://github.com/shandley/chromdetect
-```
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+
+> **Note**: Replace the Zenodo DOI badge above with the actual DOI after your first GitHub release triggers Zenodo archival.
 
 ## License
 

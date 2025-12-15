@@ -11,6 +11,11 @@ from pathlib import Path
 
 from chromdetect import __version__
 from chromdetect.assembly_report import parse_assembly_report
+from chromdetect.compare import (
+    compare_assemblies,
+    format_comparison_summary,
+    format_comparison_tsv,
+)
 from chromdetect.core import (
     AssemblyStats,
     ScaffoldInfo,
@@ -21,6 +26,7 @@ from chromdetect.core import (
     parse_fasta_from_handle,
     write_fasta,
 )
+from chromdetect.html_report import generate_html_report
 from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
     FRAGMENT_PATTERNS,
@@ -68,17 +74,22 @@ def format_output(
     results: list[ScaffoldInfo],
     stats: AssemblyStats,
     output_format: str = "json",
+    assembly_name: str = "Assembly",
 ) -> str:
     """Format results for output.
 
     Args:
         results: List of ScaffoldInfo from classification
         stats: AssemblyStats summary
-        output_format: One of "json", "tsv", "summary", "bed", or "gff"
+        output_format: One of "json", "tsv", "summary", "bed", "gff", or "html"
+        assembly_name: Name of the assembly for HTML reports
 
     Returns:
         Formatted string for output
     """
+    if output_format == "html":
+        return generate_html_report(results, stats, assembly_name)
+
     if output_format == "json":
         output = {
             "summary": stats.to_dict(),
@@ -87,11 +98,12 @@ def format_output(
         return json.dumps(output, indent=2)
 
     elif output_format == "tsv":
-        lines = ["name\tlength\tclassification\tconfidence\tmethod\tchromosome_id"]
+        lines = ["name\tlength\tclassification\tconfidence\tmethod\tchromosome_id\tgc_content"]
         for r in results:
+            gc_str = f"{r.gc_content:.4f}" if r.gc_content is not None else ""
             lines.append(
                 f"{r.name}\t{r.length}\t{r.classification}\t"
-                f"{r.confidence}\t{r.detection_method}\t{r.chromosome_id or ''}"
+                f"{r.confidence}\t{r.detection_method}\t{r.chromosome_id or ''}\t{gc_str}"
             )
         return "\n".join(lines)
 
@@ -126,32 +138,16 @@ def format_output(
         if stats.gc_content:
             lines.append(f"GC content:          {stats.gc_content*100:.1f}%")
 
-        # Telomere information
-        if stats.telomere_count > 0 or stats.t2t_count > 0:
-            lines.append("")
-            lines.append("Telomere Detection:")
-            lines.append(f"  With telomeres:    {stats.telomere_count:,}")
-            lines.append(f"  T2T chromosomes:   {stats.t2t_count:,}")
-
-        # Quality score
-        if stats.quality_score is not None:
-            lines.append("")
-            lines.append(f"Quality Score:       {stats.quality_score:.3f}")
-
         lines.extend(["", "-" * 60, "Top 20 Scaffolds:", "-" * 60])
 
         # Show top scaffolds
         top_results = sorted(results, key=lambda r: -r.length)[:20]
         for r in top_results:
             chr_str = f" ({r.chromosome_id})" if r.chromosome_id else ""
-            telo_str = ""
-            if r.has_telomere_5prime and r.has_telomere_3prime:
-                telo_str = " [T2T]"
-            elif r.has_telomere_5prime or r.has_telomere_3prime:
-                telo_str = " [T]"
+            gc_str = f" GC:{r.gc_content*100:.1f}%" if r.gc_content is not None else ""
             lines.append(
                 f"  {r.name:<30} {r.length:>12,} bp  "
-                f"{r.classification:<12} {r.confidence:.2f}{chr_str}{telo_str}"
+                f"{r.classification:<12} {r.confidence:.2f}{chr_str}{gc_str}"
             )
 
         return "\n".join(lines)
@@ -223,10 +219,7 @@ def process_batch(
 
         try:
             # Parse FASTA
-            need_full_sequences = (
-                args.extract_chromosomes is not None
-                or getattr(args, "detect_telomeres", False)
-            )
+            need_full_sequences = args.extract_chromosomes is not None
             scaffolds = parse_fasta(fasta_path, need_full_sequences)
 
             # Classify
@@ -234,7 +227,6 @@ def process_batch(
                 scaffolds,
                 min_chromosome_size=args.min_size,
                 expected_chromosomes=args.karyotype,
-                detect_telomeres=getattr(args, "detect_telomeres", False),
                 custom_patterns=custom_patterns,
                 assembly_report=assembly_report,
             )
@@ -261,8 +253,9 @@ def process_batch(
                 results = [r for r in results if r.length >= args.min_length]
 
             # Format and write output
-            output = format_output(results, stats, args.format)
-            out_file = output_dir / f"{fasta_path.stem}{out_ext}"
+            output = format_output(results, stats, args.format, fasta_path.stem)
+            out_ext_actual = ".html" if args.format == "html" else out_ext
+            out_file = output_dir / f"{fasta_path.stem}{out_ext_actual}"
             with open(out_file, "w") as f:
                 f.write(output)
 
@@ -355,7 +348,7 @@ Supported naming conventions:
     parser.add_argument(
         "-f",
         "--format",
-        choices=["json", "tsv", "summary", "bed", "gff"],
+        choices=["json", "tsv", "summary", "bed", "gff", "html"],
         default="summary",
         help="Output format (default: summary)",
     )
@@ -391,9 +384,10 @@ Supported naming conventions:
         help="Process all FASTA files in directory (batch mode)",
     )
     parser.add_argument(
-        "--detect-telomeres",
-        action="store_true",
-        help="Detect telomeric repeats at scaffold ends (requires full sequences)",
+        "--compare",
+        type=Path,
+        metavar="FASTA2",
+        help="Compare with a second assembly (side-by-side analysis)",
     )
     parser.add_argument(
         "--patterns",
@@ -539,10 +533,8 @@ Supported naming conventions:
     use_stdin = args.fasta == "-"
     fasta_path = None if use_stdin else Path(args.fasta)
 
-    # Determine if we need full sequences (for extraction or telomere detection)
-    need_full_sequences = (
-        args.extract_chromosomes is not None or args.detect_telomeres
-    )
+    # Determine if we need full sequences (for extraction)
+    need_full_sequences = args.extract_chromosomes is not None
 
     if verbose:
         print(f"ChromDetect {__version__}", file=sys.stderr)
@@ -595,7 +587,6 @@ Supported naming conventions:
         scaffolds,
         min_chromosome_size=args.min_size,
         expected_chromosomes=args.karyotype,
-        detect_telomeres=args.detect_telomeres,
         custom_patterns=custom_patterns,
         assembly_report=assembly_report,
     )
@@ -606,11 +597,6 @@ Supported naming conventions:
         print(f"  Unlocalized: {stats.unlocalized_count}", file=sys.stderr)
         print(f"  Unplaced: {stats.unplaced_count}", file=sys.stderr)
         print(f"  N50: {stats.n50:,} bp", file=sys.stderr)
-        if args.detect_telomeres:
-            print(f"  With telomeres: {stats.telomere_count}", file=sys.stderr)
-            print(f"  T2T chromosomes: {stats.t2t_count}", file=sys.stderr)
-        if stats.quality_score is not None:
-            print(f"  Quality score: {stats.quality_score:.3f}", file=sys.stderr)
 
     # Handle chromosome extraction
     if args.extract_chromosomes:
@@ -662,8 +648,68 @@ Supported naming conventions:
             file=sys.stderr,
         )
 
+    # Handle comparison mode
+    if args.compare:
+        if not args.compare.exists():
+            print(f"Error: Comparison file not found: {args.compare}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Parsing second assembly {args.compare}...", file=sys.stderr)
+
+        try:
+            scaffolds2 = parse_fasta(args.compare, need_full_sequences)
+        except ValueError as e:
+            print(f"Error: Invalid FASTA format in comparison file: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+        except OSError as e:
+            print(f"Error: Cannot read comparison file: {e}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Found {len(scaffolds2)} scaffolds in second assembly", file=sys.stderr)
+            print("Classifying second assembly...", file=sys.stderr)
+
+        results2, stats2 = classify_scaffolds(
+            scaffolds2,
+            min_chromosome_size=args.min_size,
+            expected_chromosomes=args.karyotype,
+            custom_patterns=custom_patterns,
+            assembly_report=assembly_report,
+        )
+
+        # Get assembly names from file paths
+        assembly1_name = Path(args.fasta).stem if args.fasta != "-" else "Assembly 1"
+        assembly2_name = args.compare.stem
+
+        comparison = compare_assemblies(
+            results, stats, results2, stats2,
+            assembly1_name=assembly1_name,
+            assembly2_name=assembly2_name,
+        )
+
+        # Format comparison output
+        if args.format == "json":
+            output = json.dumps(comparison.to_dict(), indent=2)
+        elif args.format == "tsv":
+            output = format_comparison_tsv(comparison)
+        else:
+            output = format_comparison_summary(comparison)
+
+        # Write output
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Comparison results written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
+        sys.exit(EXIT_SUCCESS)
+
     # Format output
-    output = format_output(results, stats, args.format)
+    assembly_name = Path(args.fasta).stem if args.fasta != "-" else "Assembly"
+    output = format_output(results, stats, args.format, assembly_name)
 
     # Write output
     if args.output:

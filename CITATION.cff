@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "ChromDetect"
+abstract: "A utility to classify scaffolds in genome assemblies based on naming conventions and size."
+authors:
+  - family-names: Handley
+    given-names: Scott A.
+    email: handley.scott@gmail.com
+    affiliation: "Washington University School of Medicine"
+    orcid: "https://orcid.org/0000-0002-2143-6570"
+repository-code: "https://github.com/shandley/chromdetect"
+url: "https://github.com/shandley/chromdetect"
+license: MIT
+version: "0.5.0"
+date-released: "2024-12-15"
+keywords:
+  - genomics
+  - bioinformatics
+  - genome-assembly
+  - chromosome
+  - scaffolds
+  - Python

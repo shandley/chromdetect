@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chromdetect"
-version = "0.3.0"
+version = "0.5.0"
 description = "Detect chromosome-level scaffolds in genome assemblies with inconsistent naming conventions"
 readme = "README.md"
 license = "MIT"
@@ -56,6 +56,17 @@ Changelog = "https://github.com/shandley/chromdetect/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["chromdetect"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "chromdetect/",
+    "examples/",
+    "tests/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

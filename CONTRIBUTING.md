@@ -85,6 +85,44 @@ def test_your_pattern(self, name, expected_class, expected_chr_id):
 - Use pytest fixtures for shared test data
 - Test edge cases (empty files, missing data, etc.)
 
+## Releasing New Versions
+
+For maintainers releasing new versions:
+
+1. **Update version numbers** in:
+   - `chromdetect/__init__.py`
+   - `pyproject.toml`
+   - `CITATION.cff`
+
+2. **Update CHANGELOG.md** with release notes
+
+3. **Create a GitHub release**:
+   - Go to Releases > Draft a new release
+   - Create a new tag (e.g., `v0.5.0`)
+   - Use the CHANGELOG content for release notes
+   - Publish the release
+
+4. **Zenodo automatically archives** the release and mints a DOI
+   - Update the DOI badge in README.md with the new DOI
+
+5. **Publish to PyPI**:
+   ```bash
+   python -m build
+   twine upload dist/*
+   ```
+
+## Zenodo Integration
+
+ChromDetect uses [Zenodo](https://zenodo.org) for DOI minting and long-term archival:
+
+- **CITATION.cff**: Standard citation metadata file (recognized by GitHub)
+- **.zenodo.json**: Additional Zenodo-specific metadata
+
+When a GitHub release is created, Zenodo automatically:
+1. Archives the release
+2. Mints a DOI for that specific version
+3. Updates the concept DOI (points to latest version)
+
 ## Questions?
 
 Open an issue or start a discussion on GitHub.

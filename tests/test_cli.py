@@ -172,7 +172,7 @@ class TestCLIIntegration:
         )
         assert result.returncode == 0
         assert "chromdetect" in result.stdout
-        assert "0.3.0" in result.stdout
+        assert "0.5.0" in result.stdout
 
     def test_help_flag(self) -> None:
         """Test --help flag."""
@@ -259,7 +259,7 @@ class TestCLIIntegration:
             text=True,
         )
         assert result.returncode == 0
-        assert "ChromDetect 0.3.0" in result.stderr
+        assert "ChromDetect 0.5.0" in result.stderr
         assert "Input file:" in result.stderr or "Input:" in result.stderr
 
     def test_chromosomes_only_filter(self, small_fasta: Path) -> None:
