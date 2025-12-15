@@ -454,9 +454,7 @@ If you use ChromDetect in your research, please cite it using the metadata from 
 }
 ```
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
-
-> **Note**: Replace the Zenodo DOI badge above with the actual DOI after your first GitHub release triggers Zenodo archival.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17945062.svg)](https://doi.org/10.5281/zenodo.17945062)
 
 ## License
 
