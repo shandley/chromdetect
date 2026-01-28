@@ -19,6 +19,9 @@ from official NCBI assembly reports.
 | GRCg6a | Chicken (*Gallus gallus*) | GRC | Numeric (1, 2, 3...) | 50 |
 | GRCh38.p14 | Human (*Homo sapiens*) | GRC | Numeric + HSCHR* | 50 |
 | GRCz11 | Zebrafish (*Danio rerio*) | GRC | Numeric + CTG*/NA* | 50 |
+| TAIR10.1 | Arabidopsis (*A. thaliana*) | TAIR | Numeric (plant) | 7 |
+| ASM584v2 | E. coli K-12 | NCBI | Accession (bacterial) | 1 |
+| T2T-CHM13v2.0 | Human (*Homo sapiens*) | T2T | Numeric (complete) | 25 |
 
 ## Results Summary
 
@@ -27,9 +30,12 @@ from official NCBI assembly reports.
 | Zebra finch | SUPER_* (VGP) | **100.0%** | 50 | 0 |
 | Zebra finch | NC_*/NW_* (RefSeq) | **100.0%** | 50 | 0 |
 | Chicken | Numeric | **100.0%** | 50 | 0 |
-| Human | Numeric + HSCHR* | **100.0%** | 50 | 0 |
+| Human GRCh38 | Numeric + HSCHR* | **100.0%** | 50 | 0 |
 | Zebrafish | Numeric + CTG*/NA* | **100.0%** | 50 | 0 |
-| **OVERALL** | | **100.0%** | 250 | 0 |
+| Arabidopsis | Numeric (plant) | **100.0%** | 7 | 0 |
+| E. coli | Accession (bacterial) | **100.0%** | 1 | 0 |
+| Human T2T | Numeric (complete) | **100.0%** | 25 | 0 |
+| **OVERALL** | | **100.0%** | 283 | 0 |
 
 ## Analysis by Naming Convention
 

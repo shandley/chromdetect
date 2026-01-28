@@ -48,5 +48,35 @@
     "incorrect": 0,
     "accuracy": 100.0,
     "misclassifications": []
+  },
+  {
+    "description": "Arabidopsis TAIR10 (Plant, numeric)",
+    "fasta": "arabidopsis_test.fasta",
+    "total": 7,
+    "matched": 7,
+    "correct": 7,
+    "incorrect": 0,
+    "accuracy": 100.0,
+    "misclassifications": []
+  },
+  {
+    "description": "E. coli K-12 (Bacterial, accession)",
+    "fasta": "ecoli_test.fasta",
+    "total": 1,
+    "matched": 1,
+    "correct": 1,
+    "incorrect": 0,
+    "accuracy": 100.0,
+    "misclassifications": []
+  },
+  {
+    "description": "Human T2T-CHM13 (Complete genome)",
+    "fasta": "t2t_human_test.fasta",
+    "total": 25,
+    "matched": 25,
+    "correct": 25,
+    "incorrect": 0,
+    "accuracy": 100.0,
+    "misclassifications": []
   }
 ]

@@ -50,10 +50,15 @@ def generate_fasta(scaffolds, output_path, use_field='name', max_scaffolds=50):
 
 def main():
     reports = [
+        # Original assemblies
         ('zebra_finch_report.txt', 'zebra_finch', 'SUPER_* naming (VGP)'),
         ('chicken_report.txt', 'chicken', 'Numeric naming (GRC)'),
         ('human_grch38_report.txt', 'human', 'Numeric naming (GRCh38)'),
         ('zebrafish_report.txt', 'zebrafish', 'Numeric naming (GRCz11)'),
+        # Expanded validation assemblies
+        ('arabidopsis_report.txt', 'arabidopsis', 'Numeric naming (TAIR10 plant)'),
+        ('ecoli_report.txt', 'ecoli', 'Accession naming (bacterial)'),
+        ('t2t_human_report.txt', 't2t_human', 'Numeric naming (T2T-CHM13)'),
     ]
 
     for report_file, prefix, description in reports:

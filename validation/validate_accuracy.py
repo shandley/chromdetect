@@ -112,6 +112,7 @@ def validate_assembly(fasta_path, report_path, description):
 def main():
     """Run validation on all test assemblies."""
     validations = [
+        # Original vertebrate assemblies
         ('zebra_finch_test.fasta', 'zebra_finch_report.txt',
          'Zebra Finch VGP (SUPER_* naming)'),
         ('zebra_finch_refseq.fasta', 'zebra_finch_report.txt',
@@ -122,6 +123,13 @@ def main():
          'Human GRCh38 (Numeric naming)'),
         ('zebrafish_test.fasta', 'zebrafish_report.txt',
          'Zebrafish GRCz11 (Numeric naming)'),
+        # Expanded validation: plant, bacterial, T2T
+        ('arabidopsis_test.fasta', 'arabidopsis_report.txt',
+         'Arabidopsis TAIR10 (Plant, numeric)'),
+        ('ecoli_test.fasta', 'ecoli_report.txt',
+         'E. coli K-12 (Bacterial, accession)'),
+        ('t2t_human_test.fasta', 't2t_human_report.txt',
+         'Human T2T-CHM13 (Complete genome)'),
     ]
 
     results = []
