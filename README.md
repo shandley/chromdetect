@@ -12,18 +12,21 @@
 </p>
 
 <p align="center">
-  <strong>A utility to classify scaffolds in genome assemblies based on naming conventions and size.</strong>
+  <strong>A comprehensive toolkit for genome assembly classification, validation, and quality control.</strong>
 </p>
 
 ---
 
 ## What It Does
 
-ChromDetect is a simple utility that classifies scaffolds in genome assemblies as chromosomes, unlocalized, or unplaced sequences. It works by:
+ChromDetect is a Python toolkit for working with genome assemblies. It provides:
 
-1. **Matching scaffold names** against common naming patterns (`chr1`, `Super_scaffold_1`, `LG_1`, `NC_*`, etc.)
-2. **Using size heuristics** (large scaffolds are likely chromosomes)
-3. **Adjusting for expected karyotype** if you know the chromosome count
+1. **Scaffold Classification** - Classify scaffolds as chromosomes, unlocalized, or unplaced based on naming conventions and size heuristics
+2. **Assembly Validation** - Validate FASTA files against NCBI assembly reports
+3. **Karyotype Checking** - Verify chromosome counts against expected karyotypes for 29+ species
+4. **Name Standardization** - Convert between naming conventions (UCSC, Ensembl, RefSeq, GenBank)
+5. **Version Tracking** - Compare assembly versions and track scaffold changes over time
+6. **Multi-Assembly QC Dashboard** - Generate comparative quality reports across multiple assemblies
 
 ## Why Use It?
 
@@ -33,9 +36,9 @@ Genome assemblies use inconsistent naming conventions:
 Super_scaffold_1, chr1, LG_1, HiC_scaffold_1, NC_000001.11, scaffold_1_cov50...
 ```
 
-If you need to quickly identify which scaffolds are chromosomes—for filtering, statistics, or downstream analysis—ChromDetect automates that classification.
+ChromDetect provides a unified toolkit for classifying, validating, and standardizing these assemblies.
 
-**This is a utility tool, not a validator.** It doesn't detect misassemblies or verify correctness. For assembly QC, use tools like QUAST or Merqury.
+**This is a utility tool, not a validator.** It doesn't detect misassemblies or verify sequence correctness. For assembly QC, use tools like QUAST or Merqury.
 
 ## Installation
 
@@ -51,52 +54,12 @@ cd chromdetect
 pip install -e .
 ```
 
-## Example Data
-
-ChromDetect includes synthetic test assemblies in the `examples/` directory:
-
-```bash
-# Try it immediately after installation
-chromdetect examples/synthetic_assembly.fasta
-
-# Compare two assembly versions
-chromdetect examples/synthetic_assembly.fasta --compare examples/synthetic_assembly_v2.fasta
-```
-
-### Downloading Real Genome Assemblies
-
-For testing with real data, we recommend these small, well-annotated assemblies:
-
-**Saccharomyces cerevisiae S288C** (Yeast, ~12 Mb, 16 chromosomes):
-```bash
-# Using NCBI datasets CLI (install: pip install ncbi-datasets-cli)
-datasets download genome accession GCF_000146045.2 --include genome
-unzip ncbi_dataset.zip
-chromdetect ncbi_dataset/data/GCF_000146045.2/GCF_000146045.2_R64_genomic.fna
-```
-
-**Caenorhabditis elegans** (Nematode, ~100 Mb, 6 chromosomes):
-```bash
-datasets download genome accession GCF_000002985.6 --include genome
-unzip ncbi_dataset.zip
-chromdetect ncbi_dataset/data/GCF_000002985.6/*.fna
-```
-
-**Arabidopsis thaliana** (Plant, ~135 Mb, 5 chromosomes):
-```bash
-datasets download genome accession GCF_000001735.4 --include genome
-unzip ncbi_dataset.zip
-chromdetect ncbi_dataset/data/GCF_000001735.4/*.fna --karyotype 5
-```
-
-For more test data options, see [NCBI Datasets](https://www.ncbi.nlm.nih.gov/datasets/) or [GenomeArk](https://genomeark.org) (VGP assemblies).
-
 ## Quick Start
 
-### Command Line
+### Basic Classification
 
 ```bash
-# Basic usage - get summary
+# Get summary of an assembly
 chromdetect assembly.fasta
 
 # Output JSON for programmatic use
@@ -105,82 +68,70 @@ chromdetect assembly.fasta --format json --output results.json
 # Use karyotype information for better accuracy
 chromdetect assembly.fasta --karyotype 24
 
-# Export only chromosome-level scaffolds as TSV
-chromdetect assembly.fasta --chromosomes-only --format tsv > chromosomes.tsv
-
-# Export as BED or GFF format for pipeline integration
-chromdetect assembly.fasta --format bed > scaffolds.bed
-chromdetect assembly.fasta --format gff > scaffolds.gff
-
-# Extract chromosome sequences to a new FASTA file
-chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
-
-# Batch process multiple assemblies
-chromdetect --batch assemblies_dir/ --output results_dir/
-
-# Compare two assemblies side-by-side
-chromdetect assembly_v1.fasta --compare assembly_v2.fasta
-
 # Generate visual HTML report
 chromdetect assembly.fasta --format html -o report.html
-
-# Use custom naming patterns
-chromdetect assembly.fasta --patterns custom_patterns.yaml
-
-# Use NCBI assembly report for accurate classification
-chromdetect assembly.fasta --assembly-report GCF_000001405.assembly_report.txt
 ```
 
-### Python API
+### Validation Features
 
-```python
-# Simple one-liner classification (recommended for most use cases)
-from chromdetect import classify_fasta, compare_fasta_files
+```bash
+# Validate FASTA against NCBI assembly report
+chromdetect assembly.fasta --assembly-report report.txt --validate
 
-results, stats = classify_fasta("assembly.fasta")
-print(f"Found {stats.chromosome_count} chromosomes")
-print(f"N50: {stats.n50 / 1e6:.1f} Mb")
+# Check chromosome count against expected karyotype
+chromdetect assembly.fasta --check-karyotype human
 
-# Compare two assemblies
-comparison = compare_fasta_files("assembly_v1.fasta", "assembly_v2.fasta")
-print(f"Shared chromosomes: {len(comparison.shared_chromosomes)}")
-print(f"N50 change: {comparison.summary()['n50_difference']:,} bp")
+# List available species in karyotype database
+chromdetect --list-species
 ```
 
-For more control, use the lower-level API:
+### Standardization Features
 
-```python
-from chromdetect import (
-    parse_fasta, classify_scaffolds, write_fasta, format_bed, format_gff,
-    parse_assembly_report
-)
+```bash
+# Rename scaffolds to UCSC convention (chr1, chr2, chrX)
+chromdetect assembly.fasta --rename ucsc -o renamed.fasta
 
-# Parse and classify with options
-scaffolds = parse_fasta("assembly.fasta.gz")
-results, stats = classify_scaffolds(scaffolds, expected_chromosomes=24)
+# Rename to Ensembl convention (1, 2, X)
+chromdetect assembly.fasta --rename ensembl -o renamed.fasta
 
-# Print summary
-print(f"Found {stats.chromosome_count} chromosomes")
-print(f"Total assembly: {stats.total_length / 1e9:.2f} Gb")
+# Check NCBI submission compliance
+chromdetect assembly.fasta --check-compliance
 
-# Access individual scaffold classifications
-for r in results:
-    if r.classification == "chromosome":
-        print(f"{r.name}: {r.length:,} bp (confidence: {r.confidence:.2f})")
-
-# Export to BED or GFF format
-bed_output = format_bed(results)
-gff_output = format_gff(results)
-
-# Use NCBI assembly report for authoritative classification
-report = parse_assembly_report("assembly_report.txt")
-results, stats = classify_scaffolds(scaffolds, assembly_report=report)
+# Detect current naming convention
+chromdetect assembly.fasta --detect-convention
 ```
 
-## Output Formats
+### Version Comparison
 
-### Summary (default)
+```bash
+# Compare two assembly versions
+chromdetect v1.fasta --compare-versions v2.fasta
 
+# Track changes in JSON format
+chromdetect v1.fasta --compare-versions v2.fasta --format json
+```
+
+### Multi-Assembly Dashboard
+
+```bash
+# Generate QC dashboard for multiple assemblies
+chromdetect --dashboard *.fasta -o dashboard.html --format html
+
+# Compare assemblies in TSV format
+chromdetect --dashboard assembly1.fa assembly2.fa assembly3.fa --format tsv
+```
+
+## Features
+
+### 1. Scaffold Classification
+
+Classify scaffolds using pattern matching and size heuristics:
+
+```bash
+chromdetect assembly.fasta --format summary
+```
+
+Output:
 ```
 ============================================================
 CHROMDETECT ASSEMBLY ANALYSIS
@@ -189,93 +140,250 @@ CHROMDETECT ASSEMBLY ANALYSIS
 Total scaffolds:     1,234
 Total length:        2,876,543,210 bp (2.88 Gb)
 N50:                 45,678,901 bp (45.7 Mb)
-N90:                 12,345,678 bp
-Largest scaffold:    198,765,432 bp
 
 Scaffold Classification:
   Chromosomes:       24 (2.85 Gb)
   Unlocalized:       15
   Unplaced:          1,195
-
-Chromosome N50:      118,234,567 bp (118.2 Mb)
-GC content:          41.2%
 ```
 
-### JSON
+### 2. Assembly Report Validation
 
-```json
-{
-  "summary": {
-    "total_scaffolds": 1234,
-    "chromosome_count": 24,
-    "n50": 45678901,
-    ...
-  },
-  "scaffolds": [
-    {
-      "name": "chr1",
-      "length": 198765432,
-      "classification": "chromosome",
-      "confidence": 0.95,
-      "detection_method": "name_chr_explicit",
-      "chromosome_id": "1"
-    },
-    ...
-  ]
-}
+Validate FASTA files against NCBI assembly reports to detect:
+- Missing sequences
+- Size mismatches
+- Accession mapping issues
+
+```bash
+chromdetect assembly.fasta --assembly-report report.txt --validate
+
+# With size tolerance (allow 1% difference)
+chromdetect assembly.fasta --assembly-report report.txt --validate --size-tolerance 0.01
+
+# Strict mode (treat warnings as errors)
+chromdetect assembly.fasta --assembly-report report.txt --validate --strict
 ```
 
-### TSV
+### 3. Karyotype Consistency Checking
 
-```
-name    length    classification    confidence    method    chromosome_id
-chr1    198765432    chromosome    0.95    name_chr_explicit    1
-chr2    175432198    chromosome    0.93    name_chr_explicit    2
-...
-```
+Verify assemblies against expected karyotypes for 29 species:
 
-### BED
+```bash
+# Check human assembly
+chromdetect assembly.fasta --check-karyotype human
 
-Standard BED6 format for integration with bedtools, IGV, and other genomics tools:
+# Check mouse assembly
+chromdetect assembly.fasta --check-karyotype "Mus musculus"
 
-```
-chr1    0    198765432    chromosome    950    .
-chr2    0    175432198    chromosome    930    .
-...
-```
+# Check by taxonomy ID
+chromdetect assembly.fasta --check-karyotype 9606
 
-### GFF3
-
-GFF3 format with classification metadata in attributes:
-
-```
-##gff-version 3
-chr1    chromdetect    chromosome    1    198765432    0.950    .    .    ID=chr1;Name=chr1;classification=chromosome;detection_method=name_chr_explicit;chromosome_id=1
-...
+# List all available species
+chromdetect --list-species
 ```
 
-## Options
+Supported species include: human, mouse, rat, zebrafish, fruit fly, C. elegans, Arabidopsis, chicken, dog, cat, horse, cow, pig, sheep, goat, rabbit, guinea pig, frog, rice, maize, wheat, soybean, tomato, yeast, E. coli, and more.
+
+### 4. Assembly Standardization
+
+Convert between naming conventions:
+
+| Convention | Example Names |
+|------------|---------------|
+| UCSC | chr1, chr2, chrX, chrM |
+| Ensembl | 1, 2, X, MT |
+| RefSeq | NC_000001.11, NC_000023.11 |
+| GenBank | CM000663.2, CM000685.2 |
+
+```bash
+# Convert to UCSC style
+chromdetect assembly.fasta --rename ucsc -o ucsc_assembly.fasta
+
+# Convert to Ensembl style
+chromdetect assembly.fasta --rename ensembl -o ensembl_assembly.fasta
+
+# Check NCBI submission compliance
+chromdetect assembly.fasta --check-compliance
+```
+
+### 5. Assembly Version Tracking
+
+Compare two versions of an assembly to detect:
+- Scaffold promotions (unplaced → chromosome)
+- Scaffold demotions (chromosome → unplaced)
+- Significant size changes (potential merges/splits)
+- Added/removed scaffolds
+- N50 and chromosome count changes
+
+```bash
+chromdetect v1.fasta --compare-versions v2.fasta
+```
+
+Output:
+```
+======================================================================
+ASSEMBLY VERSION COMPARISON
+======================================================================
+Version 1: v1.fasta
+Version 2: v2.fasta
+
+METRIC CHANGES:
+----------------------------------------
+Total scaffolds:       1,234 →      1,198 (-36)
+Chromosomes:              22 →         24 (+2)
+N50:            45,678,901 →  52,345,678 (+6,666,777 bp, +14.6%)
+
+SCAFFOLD CHANGES:
+----------------------------------------
+Unchanged:     1,150
+Promoted:          2
+Demoted:           0
+Added:            48
+Removed:          84
+```
+
+### 6. Multi-Assembly QC Dashboard
+
+Generate comparative quality reports across multiple assemblies:
+
+```bash
+# Generate interactive HTML dashboard
+chromdetect --dashboard *.fasta -o dashboard.html --format html
+```
+
+The HTML dashboard includes:
+- Summary statistics cards
+- Interactive charts (N50, chromosome counts, coverage)
+- Sortable comparison table
+- QC warnings and flags
+
+```bash
+# JSON output for programmatic use
+chromdetect --dashboard *.fasta --format json -o qc_report.json
+
+# TSV for spreadsheet analysis
+chromdetect --dashboard *.fasta --format tsv -o comparison.tsv
+```
+
+## Python API
+
+```python
+from chromdetect import classify_fasta
+
+# Basic classification
+results, stats = classify_fasta("assembly.fasta")
+print(f"Found {stats.chromosome_count} chromosomes")
+print(f"N50: {stats.n50 / 1e6:.1f} Mb")
+```
+
+### Validation API
+
+```python
+from chromdetect.validation import validate_fasta_against_report
+
+result = validate_fasta_against_report(
+    "assembly.fasta",
+    "assembly_report.txt",
+    size_tolerance=0.01
+)
+print(f"Valid: {result.is_valid}")
+print(f"Errors: {len(result.errors)}")
+```
+
+### Karyotype API
+
+```python
+from chromdetect.karyotype import validate_karyotype, KaryotypeDatabase
+
+db = KaryotypeDatabase()
+result = validate_karyotype(
+    ["1", "2", "3", "X", "Y"],
+    species="human",
+    database=db
+)
+print(f"Valid: {result.is_valid}")
+```
+
+### Standardization API
+
+```python
+from chromdetect.standardize import standardize_fasta, check_ncbi_compliance
+
+# Rename scaffolds
+result = standardize_fasta(
+    "input.fasta",
+    "output.fasta",
+    target_convention="ucsc",
+    species="human"
+)
+print(f"Renamed {result.renamed_count} scaffolds")
+
+# Check compliance
+from chromdetect.core import parse_fasta
+scaffolds = parse_fasta("assembly.fasta")
+compliance = check_ncbi_compliance(scaffolds)
+print(f"Compliant: {compliance.is_compliant}")
+```
+
+### Version Comparison API
+
+```python
+from chromdetect.version import compare_fasta_files
+
+result = compare_fasta_files("v1.fasta", "v2.fasta")
+print(f"N50 change: {result.n50_change:+,} bp")
+print(f"Promoted scaffolds: {result.promoted_count}")
+print(f"Demoted scaffolds: {result.demoted_count}")
+```
+
+### Dashboard API
+
+```python
+from chromdetect.dashboard import analyze_multiple_assemblies, generate_dashboard_html
+
+result = analyze_multiple_assemblies(["a1.fasta", "a2.fasta", "a3.fasta"])
+html = generate_dashboard_html(result)
+
+with open("dashboard.html", "w") as f:
+    f.write(html)
+```
+
+## Output Formats
+
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| `summary` | Human-readable text (default) | Quick inspection |
+| `json` | Structured JSON | Programmatic access |
+| `tsv` | Tab-separated values | Spreadsheet analysis |
+| `bed` | BED6 format | Genomics pipelines |
+| `gff` | GFF3 format | Genome browsers |
+| `html` | Interactive HTML report | Visual inspection |
+
+## Command Line Options
 
 | Option | Description |
 |--------|-------------|
-| `-f, --format` | Output format: `summary`, `json`, `tsv`, `bed`, `gff`, `html` (default: summary) |
-| `-o, --output` | Write output to file instead of stdout |
-| `-k, --karyotype` | Expected chromosome count for karyotype-informed detection |
-| `-s, --min-size` | Minimum size (bp) to consider chromosome-level (default: 10Mb) |
-| `-c, --chromosomes-only` | Only output chromosome-level scaffolds |
-| `--extract-chromosomes` | Extract chromosome sequences to a FASTA file |
-| `--batch` | Process all FASTA files in a directory |
-| `--compare` | Compare with a second assembly (side-by-side analysis) |
-| `--patterns` | Custom patterns file (YAML or JSON) for scaffold name matching |
-| `--assembly-report` | NCBI assembly report file for authoritative classification |
-| `--min-confidence` | Minimum confidence threshold (0.0-1.0) to include scaffolds |
-| `--min-length` | Minimum scaffold length (bp) to include in output |
+| `-f, --format` | Output format: `summary`, `json`, `tsv`, `bed`, `gff`, `html` |
+| `-o, --output` | Write output to file |
+| `-k, --karyotype` | Expected chromosome count |
+| `-s, --min-size` | Minimum chromosome size (default: 10Mb) |
+| `-c, --chromosomes-only` | Only output chromosomes |
+| `--extract-chromosomes` | Extract chromosome sequences to FASTA |
+| `--batch` | Process all FASTA files in directory |
+| `--compare` | Compare with second assembly |
+| `--validate` | Validate against assembly report |
+| `--check-karyotype` | Check against species karyotype |
+| `--rename` | Rename to target convention |
+| `--check-compliance` | Check NCBI submission compliance |
+| `--compare-versions` | Compare two assembly versions |
+| `--dashboard` | Generate multi-assembly QC dashboard |
+| `--list-species` | List available species |
 | `-q, --quiet` | Suppress progress messages |
-| `-v, --verbose` | Show detailed processing information |
+| `-v, --verbose` | Show detailed information |
 
 ## Supported Naming Conventions
 
-ChromDetect recognizes these naming patterns (case-insensitive):
+ChromDetect recognizes these naming patterns:
 
 | Pattern | Examples | Method |
 |---------|----------|--------|
@@ -289,128 +397,20 @@ ChromDetect recognizes these naming patterns (case-insensitive):
 | RaGOO | `Scaffold_1_RaGOO` | `name_ragoo` |
 | Simple numeric | `1`, `X`, `MT` | `name_numeric` |
 
-Patterns that indicate **unlocalized** scaffolds:
-- `*_random`, `*_unloc*`, `chrUn_*`
-
-Patterns that indicate **unplaced** scaffolds (contigs/fragments):
-- `*_ctg*`, `*contig*`, `*_arrow_*`, `*_pilon*`, `*_hap*`
-
-## How It Works
-
-ChromDetect combines name-based and size-based detection with these priority rules:
-
-1. **Strong name match (confidence ≥ 0.8)** takes priority
-2. **Large scaffold + weak name match** = chromosome with boosted confidence
-3. **Large scaffold + no name match** = chromosome with reduced confidence
-4. **Small scaffold** = unplaced regardless of name
-
-When `--karyotype` is provided:
-- If too many candidates: demote lowest-confidence chromosomes
-- If too few candidates: promote largest unplaced scaffolds
-
-## Use Cases
-
-### VGP Assembly Classification
-
-```bash
-# Classify scaffolds in a VGP curated assembly
-chromdetect species.pri.cur.fasta.gz --karyotype 24 --format json
-```
-
-### Multi-Assembly Classification
-
-```python
-from chromdetect import classify_fasta
-
-# Classify multiple assemblies independently
-species = [
-    ("human.fa", 23),
-    ("mouse.fa", 20),
-    ("zebrafish.fa", 25),
-]
-
-for fasta, expected_chr in species:
-    results, stats = classify_fasta(fasta)
-    print(f"{fasta}: {stats.chromosome_count} chromosomes detected (expected {expected_chr})")
-```
-
-Note: This classifies each assembly independently. ChromDetect does not perform synteny analysis or identify homologous chromosomes across species.
-
-### Pipeline Integration
-
-```bash
-# As part of assembly QC pipeline
-chromdetect assembly.fasta --format json | jq '.summary.chromosome_count'
-
-# Export scaffold regions in BED format for downstream analysis
-chromdetect assembly.fasta --format bed --chromosomes-only > chromosomes.bed
-bedtools getfasta -fi assembly.fasta -bed chromosomes.bed -fo chr_regions.fa
-```
-
-### Batch Processing
-
-```bash
-# Process all assemblies in a directory
-chromdetect --batch assemblies/ --format json --output results/
-
-# This creates:
-# - results/assembly1.json
-# - results/assembly2.json
-# - ...
-# - results/batch_summary.tsv  (overview of all assemblies)
-```
-
-### Extract Chromosome Sequences
-
-```bash
-# Extract only chromosome-level sequences to a new FASTA
-chromdetect assembly.fasta --extract-chromosomes chromosomes.fasta
-
-# Combine with other options
-chromdetect assembly.fasta \
-    --karyotype 24 \
-    --extract-chromosomes chromosomes.fasta \
-    --format json --output report.json
-```
-
-### Using NCBI Assembly Reports
-
-```bash
-# Download an assembly report from NCBI
-# https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.40
-
-# Use it for authoritative scaffold classification
-chromdetect GRCh38.fasta --assembly-report GCF_000001405.40_GRCh38.p14_assembly_report.txt
-```
-
 ## Limitations
 
-ChromDetect uses heuristics and pattern matching—it has inherent limitations:
+- **Not a validator:** Cannot detect misassemblies or sequence errors
+- **Pattern-dependent:** Unusual naming schemes may not be recognized
+- **Size heuristics are approximate:** Large scaffolds assumed to be chromosomes
+- **No reference comparison:** Cannot identify missing chromosomes
 
-- **Not a validator:** ChromDetect classifies scaffolds but cannot detect misassemblies, inversions, or sequence errors. Use QUAST, Merqury, or similar tools for assembly validation.
-
-- **Pattern-dependent:** Classification relies on naming conventions. Unusual or custom naming schemes may not be recognized without custom patterns.
-
-- **Size heuristics are approximate:** A 50 Mb scaffold is assumed to be chromosome-level, but could be a misassembly or concatenated contigs.
-
-- **No reference comparison:** ChromDetect doesn't compare against reference genomes, so it cannot identify missing chromosomes or structural variants.
-
-For critical applications, combine ChromDetect with comprehensive QC tools and manual curation.
+For critical applications, combine ChromDetect with comprehensive QC tools.
 
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Adding New Patterns
-
-To add support for a new naming convention:
-
-1. Add the regex pattern to `chromdetect/patterns.py`
-2. Include a descriptive method name
-3. Ensure the pattern captures chromosome ID in group 1
-4. Add tests in `tests/test_patterns.py`
-
-Example:
 
 ```python
 # In patterns.py
@@ -421,19 +421,11 @@ CHROMOSOME_PATTERNS.append(
 
 ### Using Custom Patterns
 
-You can also use custom patterns without modifying the source code:
-
 ```yaml
 # custom_patterns.yaml
 chromosome_patterns:
   - pattern: "^MyScaffold_(\\d+)$"
     name: "my_scaffold"
-  - pattern: "^CustomChr_(\\d+)$"
-    name: "custom_chr"
-unlocalized_patterns:
-  - my_random
-fragment_patterns:
-  - my_contig
 ```
 
 ```bash
@@ -442,15 +434,15 @@ chromdetect assembly.fasta --patterns custom_patterns.yaml
 
 ## Citation
 
-If you use ChromDetect in your research, please cite it using the metadata from our [CITATION.cff](CITATION.cff) file:
+If you use ChromDetect in your research, please cite:
 
 ```bibtex
 @software{chromdetect,
   author = {Handley, Scott A.},
-  title = {ChromDetect: A utility for classifying scaffolds in genome assemblies},
+  title = {ChromDetect: A toolkit for genome assembly classification and QC},
   url = {https://github.com/shandley/chromdetect},
-  version = {0.5.0},
-  year = {2024}
+  version = {0.6.0},
+  year = {2025}
 }
 ```
 

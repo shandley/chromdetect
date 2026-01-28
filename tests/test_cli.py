@@ -172,7 +172,7 @@ class TestCLIIntegration:
         )
         assert result.returncode == 0
         assert "chromdetect" in result.stdout
-        assert "0.5.0" in result.stdout
+        assert "0.6.0" in result.stdout
 
     def test_help_flag(self) -> None:
         """Test --help flag."""
@@ -259,7 +259,7 @@ class TestCLIIntegration:
             text=True,
         )
         assert result.returncode == 0
-        assert "ChromDetect 0.5.0" in result.stderr
+        assert "ChromDetect 0.6.0" in result.stderr
         assert "Input file:" in result.stderr or "Input:" in result.stderr
 
     def test_chromosomes_only_filter(self, small_fasta: Path) -> None:
@@ -915,3 +915,265 @@ class TestCoreFunctions:
         name, length, seq = scaffolds[0]
         assert length == 16000
         assert len(seq) == 16000  # Full sequence
+
+
+class TestValidationCLI:
+    """Test validation mode CLI."""
+
+    @pytest.fixture
+    def matching_files(self) -> tuple[Path, Path]:
+        """Create matching FASTA and report files."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as fasta_f:
+            fasta_f.write(">chr1\n")
+            fasta_f.write("ACGTACGTACGTACGT\n")
+            fasta_f.write(">chr2\n")
+            fasta_f.write("GCTAGCTAGCTAGCTAGCTA\n")
+            fasta_f.flush()
+            fasta_path = Path(fasta_f.name)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as report_f:
+            report_f.write("""\
+# Assembly name:  Test_Assembly
+# Organism name:  Test organism
+# Sequence-Name	Sequence-Role	Assigned-Molecule	Assigned-Molecule-Location/Type	GenBank-Accn	Relationship	RefSeq-Accn	Assembly-Unit	Sequence-Length	UCSC-style-name
+chr1	assembled-molecule	1	Chromosome	CM000001.1	=	NC_000001.1	Primary Assembly	16	chr1
+chr2	assembled-molecule	2	Chromosome	CM000002.1	=	NC_000002.1	Primary Assembly	20	chr2
+""")
+            report_f.flush()
+            report_path = Path(report_f.name)
+
+        return fasta_path, report_path
+
+    @pytest.fixture
+    def mismatched_files(self) -> tuple[Path, Path]:
+        """Create FASTA and report with size mismatches."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as fasta_f:
+            fasta_f.write(">chr1\n")
+            fasta_f.write("ACGTACGTACGTACGTACGTACGT\n")  # 24 bp
+            fasta_f.flush()
+            fasta_path = Path(fasta_f.name)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as report_f:
+            report_f.write("""\
+# Assembly name:  Test_Assembly
+# Sequence-Name	Sequence-Role	Assigned-Molecule	Assigned-Molecule-Location/Type	GenBank-Accn	Relationship	RefSeq-Accn	Assembly-Unit	Sequence-Length	UCSC-style-name
+chr1	assembled-molecule	1	Chromosome	CM000001.1	=	NC_000001.1	Primary Assembly	16	chr1
+""")
+            report_f.flush()
+            report_path = Path(report_f.name)
+
+        return fasta_path, report_path
+
+    def test_validation_valid_files(self, matching_files: tuple[Path, Path]) -> None:
+        """Test validation with matching files."""
+        fasta_path, report_path = matching_files
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                str(fasta_path),
+                "--assembly-report",
+                str(report_path),
+                "--validate",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "VALID" in result.stdout
+
+    def test_validation_invalid_files(self, mismatched_files: tuple[Path, Path]) -> None:
+        """Test validation with mismatched files."""
+        fasta_path, report_path = mismatched_files
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                str(fasta_path),
+                "--assembly-report",
+                str(report_path),
+                "--validate",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "INVALID" in result.stdout
+
+    def test_validation_json_output(self, matching_files: tuple[Path, Path]) -> None:
+        """Test validation with JSON output format."""
+        fasta_path, report_path = matching_files
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                str(fasta_path),
+                "--assembly-report",
+                str(report_path),
+                "--validate",
+                "-f",
+                "json",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["is_valid"] is True
+        assert data["summary"]["matched_count"] == 2
+
+    def test_validation_tsv_output(self, mismatched_files: tuple[Path, Path]) -> None:
+        """Test validation with TSV output format."""
+        fasta_path, report_path = mismatched_files
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                str(fasta_path),
+                "--assembly-report",
+                str(report_path),
+                "--validate",
+                "-f",
+                "tsv",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        # TSV output doesn't indicate exit code, just formatted issues
+        lines = result.stdout.strip().split("\n")
+        assert "severity" in lines[0]  # Header
+
+    def test_validation_missing_report_error(self) -> None:
+        """Test error when --validate used without --assembly-report."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as f:
+            f.write(">chr1\nACGT\n")
+            f.flush()
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "chromdetect",
+                    f.name,
+                    "--validate",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode != 0
+            assert "requires --assembly-report" in result.stderr
+
+    def test_validation_strict_mode(self) -> None:
+        """Test validation with strict mode."""
+        # Create FASTA with extra sequence not in report
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fasta", delete=False
+        ) as fasta_f:
+            fasta_f.write(">chr1\n")
+            fasta_f.write("ACGTACGTACGTACGT\n")
+            fasta_f.write(">extra_scaffold\n")
+            fasta_f.write("GCTAGCTA\n")
+            fasta_f.flush()
+            fasta_path = fasta_f.name
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as report_f:
+            report_f.write("""\
+# Assembly name:  Test
+# Sequence-Name	Sequence-Role	Assigned-Molecule	Assigned-Molecule-Location/Type	GenBank-Accn	Relationship	RefSeq-Accn	Assembly-Unit	Sequence-Length	UCSC-style-name
+chr1	assembled-molecule	1	Chromosome	CM000001.1	=	NC_000001.1	Primary Assembly	16	chr1
+""")
+            report_f.flush()
+            report_path = report_f.name
+
+        # Without strict, should succeed (extra scaffold is just a warning)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                fasta_path,
+                "--assembly-report",
+                report_path,
+                "--validate",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+        # With strict, should fail
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "chromdetect",
+                fasta_path,
+                "--assembly-report",
+                report_path,
+                "--validate",
+                "--strict",
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+
+    def test_validation_output_to_file(self, matching_files: tuple[Path, Path]) -> None:
+        """Test validation output written to file."""
+        fasta_path, report_path = matching_files
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as out:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "chromdetect",
+                    str(fasta_path),
+                    "--assembly-report",
+                    str(report_path),
+                    "--validate",
+                    "-o",
+                    out.name,
+                    "-q",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0
+
+            with open(out.name) as f:
+                content = f.read()
+            assert "VALID" in content
+
+    def test_validation_help_text(self) -> None:
+        """Test that validation is mentioned in help."""
+        result = subprocess.run(
+            [sys.executable, "-m", "chromdetect", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert "--validate" in result.stdout
+        assert "Validate FASTA against assembly report" in result.stdout

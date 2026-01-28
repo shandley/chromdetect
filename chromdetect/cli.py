@@ -26,13 +26,43 @@ from chromdetect.core import (
     parse_fasta_from_handle,
     write_fasta,
 )
+from chromdetect.dashboard import (
+    analyze_multiple_assemblies,
+    format_dashboard_summary,
+    format_dashboard_tsv,
+    generate_dashboard_html,
+)
 from chromdetect.html_report import generate_html_report
+from chromdetect.karyotype import (
+    KaryotypeDatabase,
+    format_karyotype_summary,
+    format_karyotype_tsv,
+    validate_karyotype,
+)
 from chromdetect.patterns import (
     CHROMOSOME_PATTERNS,
     FRAGMENT_PATTERNS,
     UNLOCALIZED_PATTERNS,
     load_custom_patterns,
     merge_patterns,
+)
+from chromdetect.standardize import (
+    check_ncbi_compliance,
+    detect_convention,
+    format_compliance_summary,
+    format_rename_summary,
+    standardize_fasta,
+)
+from chromdetect.validation import (
+    format_validation_summary,
+    format_validation_tsv,
+    validate_fasta_against_report,
+)
+from chromdetect.version import (
+    compare_fasta_files,
+    format_version_json,
+    format_version_summary,
+    format_version_tsv,
 )
 
 # Exit codes following sysexits.h conventions
@@ -318,6 +348,33 @@ Examples:
   chromdetect assembly.fasta --extract-chromosomes -o chromosomes.fasta
   chromdetect --batch assemblies/ --output results/
 
+Validation mode (check FASTA matches assembly report):
+  chromdetect assembly.fasta --assembly-report report.txt --validate
+  chromdetect assembly.fasta --assembly-report report.txt --validate --format json
+  chromdetect assembly.fasta --assembly-report report.txt --validate --strict
+
+Karyotype validation (check chromosome count matches expected):
+  chromdetect assembly.fasta --check-karyotype human
+  chromdetect assembly.fasta --check-karyotype "Mus musculus"
+  chromdetect --list-species  # List available species
+
+Standardization (rename scaffolds to target convention):
+  chromdetect assembly.fasta --rename ucsc -o renamed.fasta
+  chromdetect assembly.fasta --rename ensembl -o renamed.fasta
+  chromdetect assembly.fasta --rename refseq --species human -o renamed.fasta
+  chromdetect assembly.fasta --detect-convention
+  chromdetect assembly.fasta --check-compliance
+
+Version comparison (track changes between assembly versions):
+  chromdetect v1.fasta --compare-versions v2.fasta
+  chromdetect v1.fasta --compare-versions v2.fasta --format json
+  chromdetect v1.fasta --compare-versions v2.fasta --format tsv -o changes.tsv
+
+Multi-assembly QC dashboard:
+  chromdetect --dashboard *.fasta -o dashboard.html --format html
+  chromdetect --dashboard assembly1.fa assembly2.fa assembly3.fa
+  chromdetect --dashboard *.fasta --format json -o qc_report.json
+
 The tool uses multiple detection strategies:
   - Name patterns (Super_scaffold, Chr, etc.)
   - Size heuristics (large scaffolds likely chromosomes)
@@ -438,12 +495,166 @@ Supported naming conventions:
         action="store_true",
         help="Show supported naming patterns and exit",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate FASTA against assembly report (requires --assembly-report)",
+    )
+    parser.add_argument(
+        "--size-tolerance",
+        type=float,
+        default=0.0,
+        metavar="FLOAT",
+        help="Allowed fractional size difference for validation (default: 0.0 = exact)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat validation warnings as errors",
+    )
+    parser.add_argument(
+        "--check-karyotype",
+        type=str,
+        metavar="SPECIES",
+        help="Validate chromosome count/names against expected karyotype for species",
+    )
+    parser.add_argument(
+        "--karyotype-file",
+        type=Path,
+        metavar="FILE",
+        help="Custom karyotype database file (JSON/YAML) for --check-karyotype",
+    )
+    parser.add_argument(
+        "--list-species",
+        action="store_true",
+        help="List available species in karyotype database and exit",
+    )
+    parser.add_argument(
+        "--rename",
+        type=str,
+        metavar="CONVENTION",
+        choices=["ucsc", "ensembl", "simple", "refseq", "genbank"],
+        help="Rename scaffolds to target convention (ucsc, ensembl, simple, refseq, genbank)",
+    )
+    parser.add_argument(
+        "--species",
+        type=str,
+        default="human",
+        metavar="SPECIES",
+        help="Species for accession-based renaming (default: human)",
+    )
+    parser.add_argument(
+        "--check-compliance",
+        action="store_true",
+        help="Check scaffold names for NCBI submission compliance",
+    )
+    parser.add_argument(
+        "--detect-convention",
+        action="store_true",
+        help="Detect the naming convention used in the FASTA file",
+    )
+    parser.add_argument(
+        "--compare-versions",
+        type=Path,
+        metavar="FASTA2",
+        help="Compare two assembly versions and track scaffold changes",
+    )
+    parser.add_argument(
+        "--version-size-tolerance",
+        type=float,
+        default=0.1,
+        metavar="FLOAT",
+        help="Max relative size difference for matching renamed scaffolds (default: 0.1)",
+    )
+    parser.add_argument(
+        "--version-size-threshold",
+        type=float,
+        default=0.2,
+        metavar="FLOAT",
+        help="Min relative size change to flag as resized (default: 0.2)",
+    )
+    parser.add_argument(
+        "--dashboard",
+        nargs="+",
+        type=Path,
+        metavar="FASTA",
+        help="Generate QC dashboard for multiple assemblies",
+    )
 
     args = parser.parse_args()
 
     # Handle --list-patterns before requiring fasta argument
     if args.list_patterns:
         show_patterns()
+        sys.exit(EXIT_SUCCESS)
+
+    # Handle --list-species before requiring fasta argument
+    if args.list_species:
+        db = KaryotypeDatabase()
+        if args.karyotype_file:
+            if not args.karyotype_file.exists():
+                print(f"Error: Karyotype file not found: {args.karyotype_file}", file=sys.stderr)
+                sys.exit(EXIT_NOINPUT)
+            try:
+                count = db.load_custom(args.karyotype_file)
+                print(f"Loaded {count} custom karyotypes from {args.karyotype_file}", file=sys.stderr)
+            except ValueError as e:
+                print(f"Error: Invalid karyotype file: {e}", file=sys.stderr)
+                sys.exit(EXIT_DATAERR)
+
+        print("Available species in karyotype database:")
+        print("-" * 50)
+        for species in db.list_species():
+            karyotype = db.lookup(species)
+            if karyotype:
+                print(f"  {species:<20} {karyotype.scientific_name:<30} n={karyotype.chromosome_count}")
+        print()
+        print(f"Total: {len(db)} species")
+        print()
+        print("Use --check-karyotype <species> to validate against expected karyotype")
+        sys.exit(EXIT_SUCCESS)
+
+    # Handle dashboard mode
+    if args.dashboard:
+        # Validate all input files exist
+        missing = [p for p in args.dashboard if not p.exists()]
+        if missing:
+            for p in missing:
+                print(f"Error: File not found: {p}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Generating QC dashboard for {len(args.dashboard)} assemblies...", file=sys.stderr)
+
+        try:
+            dashboard_result = analyze_multiple_assemblies(
+                args.dashboard,
+                min_chromosome_size=args.min_size,
+                expected_chromosomes=args.karyotype,
+            )
+        except Exception as e:
+            print(f"Error during dashboard generation: {e}", file=sys.stderr)
+            sys.exit(EXIT_ERROR)
+
+        # Format output
+        if args.format == "json":
+            output = json.dumps(dashboard_result.to_dict(), indent=2)
+        elif args.format == "tsv":
+            output = format_dashboard_tsv(dashboard_result)
+        elif args.format == "html":
+            output = generate_dashboard_html(dashboard_result)
+        else:
+            output = format_dashboard_summary(dashboard_result)
+
+        # Write output
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Dashboard written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
         sys.exit(EXIT_SUCCESS)
 
     # Handle batch mode
@@ -475,6 +686,313 @@ Supported naming conventions:
                 print(f"Error: Invalid assembly report: {e}", file=sys.stderr)
                 sys.exit(EXIT_DATAERR)
         process_batch(args, batch_patterns, batch_report)
+        sys.exit(EXIT_SUCCESS)
+
+    # Handle validation mode
+    if args.validate:
+        if not args.fasta:
+            parser.error("validation requires a FASTA file")
+        if not args.assembly_report:
+            parser.error("validation requires --assembly-report")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.assembly_report.exists():
+            print(
+                f"Error: Assembly report file not found: {args.assembly_report}",
+                file=sys.stderr,
+            )
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Validating {args.fasta} against {args.assembly_report}...", file=sys.stderr)
+
+        try:
+            result = validate_fasta_against_report(
+                fasta_path,
+                args.assembly_report,
+                size_tolerance=args.size_tolerance,
+                strict=args.strict,
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+        except Exception as e:
+            print(f"Error during validation: {e}", file=sys.stderr)
+            sys.exit(EXIT_ERROR)
+
+        # Format output
+        if args.format == "json":
+            output = json.dumps(result.to_dict(), indent=2)
+        elif args.format == "tsv":
+            output = format_validation_tsv(result)
+        else:
+            output = format_validation_summary(result)
+
+        # Write output
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Validation results written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
+        # Exit with appropriate code
+        sys.exit(EXIT_SUCCESS if result.is_valid else EXIT_ERROR)
+
+    # Handle karyotype validation mode
+    if args.check_karyotype:
+        if not args.fasta:
+            parser.error("karyotype validation requires a FASTA file")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        # Load karyotype database
+        karyotype_db = KaryotypeDatabase()
+        if args.karyotype_file:
+            if not args.karyotype_file.exists():
+                print(f"Error: Karyotype file not found: {args.karyotype_file}", file=sys.stderr)
+                sys.exit(EXIT_NOINPUT)
+            try:
+                count = karyotype_db.load_custom(args.karyotype_file)
+                if not args.quiet:
+                    print(f"Loaded {count} custom karyotypes", file=sys.stderr)
+            except ValueError as e:
+                print(f"Error: Invalid karyotype file: {e}", file=sys.stderr)
+                sys.exit(EXIT_DATAERR)
+
+        if not args.quiet:
+            print(f"Parsing {args.fasta}...", file=sys.stderr)
+
+        try:
+            scaffolds = parse_fasta(fasta_path)
+        except ValueError as e:
+            print(f"Error: Invalid FASTA format: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+
+        if not args.quiet:
+            print(f"Found {len(scaffolds)} scaffolds", file=sys.stderr)
+            print("Classifying scaffolds...", file=sys.stderr)
+
+        # Classify scaffolds first to identify chromosomes
+        results, stats = classify_scaffolds(
+            scaffolds,
+            min_chromosome_size=args.min_size,
+            expected_chromosomes=args.karyotype,
+        )
+
+        # Extract chromosome names/IDs from classification
+        chromosome_ids = []
+        for r in results:
+            if r.classification == "chromosome":
+                # Use chromosome_id if available, otherwise use name
+                if r.chromosome_id:
+                    chromosome_ids.append(r.chromosome_id)
+                else:
+                    chromosome_ids.append(r.name)
+
+        if not args.quiet:
+            print(f"Found {len(chromosome_ids)} chromosome-level scaffolds", file=sys.stderr)
+            print(f"Validating against karyotype for '{args.check_karyotype}'...", file=sys.stderr)
+
+        # Validate against karyotype
+        karyotype_result = validate_karyotype(
+            chromosome_ids,
+            args.check_karyotype,
+            database=karyotype_db,
+            strict=args.strict,
+        )
+
+        # Format output
+        if args.format == "json":
+            output = json.dumps(karyotype_result.to_dict(), indent=2)
+        elif args.format == "tsv":
+            output = format_karyotype_tsv(karyotype_result)
+        else:
+            output = format_karyotype_summary(karyotype_result)
+
+        # Write output
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Karyotype validation results written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
+        sys.exit(EXIT_SUCCESS if karyotype_result.is_valid else EXIT_ERROR)
+
+    # Handle NCBI compliance check
+    if args.check_compliance:
+        if not args.fasta:
+            parser.error("compliance check requires a FASTA file")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Checking NCBI compliance for {args.fasta}...", file=sys.stderr)
+
+        try:
+            scaffolds = parse_fasta(fasta_path)
+        except ValueError as e:
+            print(f"Error: Invalid FASTA format: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+
+        compliance_result = check_ncbi_compliance(scaffolds)
+
+        if args.format == "json":
+            output = json.dumps(compliance_result.to_dict(), indent=2)
+        else:
+            output = format_compliance_summary(compliance_result)
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Compliance results written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
+        sys.exit(EXIT_SUCCESS if compliance_result.is_compliant else EXIT_ERROR)
+
+    # Handle detect convention
+    if args.detect_convention:
+        if not args.fasta:
+            parser.error("convention detection requires a FASTA file")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        try:
+            scaffolds = parse_fasta(fasta_path)
+        except ValueError as e:
+            print(f"Error: Invalid FASTA format: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+
+        names = [s[0] for s in scaffolds]
+        detected = detect_convention(names)
+
+        if args.format == "json":
+            output = json.dumps({
+                "detected_convention": detected.value if detected else None,
+                "total_scaffolds": len(names),
+                "sample_names": names[:10],
+            }, indent=2)
+        else:
+            if detected:
+                output = f"Detected naming convention: {detected.value}\n"
+                output += f"Sample names: {', '.join(names[:5])}"
+                if len(names) > 5:
+                    output += f" ... ({len(names)} total)"
+            else:
+                output = "Could not determine naming convention\n"
+                output += f"Sample names: {', '.join(names[:5])}"
+
+        print(output)
+        sys.exit(EXIT_SUCCESS)
+
+    # Handle version comparison
+    if args.compare_versions:
+        if not args.fasta:
+            parser.error("version comparison requires a FASTA file")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.compare_versions.exists():
+            print(f"Error: File not found: {args.compare_versions}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print("Comparing assembly versions:", file=sys.stderr)
+            print(f"  Version 1: {args.fasta}", file=sys.stderr)
+            print(f"  Version 2: {args.compare_versions}", file=sys.stderr)
+
+        try:
+            version_result = compare_fasta_files(
+                fasta_path,
+                args.compare_versions,
+                min_chromosome_size=args.min_size,
+                size_tolerance=args.version_size_tolerance,
+                size_threshold=args.version_size_threshold,
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(EXIT_DATAERR)
+        except Exception as e:
+            print(f"Error during version comparison: {e}", file=sys.stderr)
+            sys.exit(EXIT_ERROR)
+
+        # Format output
+        if args.format == "json":
+            import json as json_module
+            output = json_module.dumps(format_version_json(version_result), indent=2)
+        elif args.format == "tsv":
+            output = format_version_tsv(version_result)
+        else:
+            output = format_version_summary(version_result)
+
+        # Write output
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+            if not args.quiet:
+                print(f"Version comparison results written to {args.output}", file=sys.stderr)
+        else:
+            print(output)
+
+        sys.exit(EXIT_SUCCESS)
+
+    # Handle rename/standardize
+    if args.rename:
+        if not args.fasta:
+            parser.error("rename requires a FASTA file")
+        if not args.output:
+            parser.error("rename requires --output to specify output file")
+
+        fasta_path = Path(args.fasta)
+        if not fasta_path.exists():
+            print(f"Error: File not found: {args.fasta}", file=sys.stderr)
+            sys.exit(EXIT_NOINPUT)
+
+        if not args.quiet:
+            print(f"Renaming scaffolds in {args.fasta} to {args.rename} convention...", file=sys.stderr)
+
+        try:
+            rename_result = standardize_fasta(
+                fasta_path,
+                args.output,
+                args.rename,
+                species=args.species,
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(EXIT_ERROR)
+
+        if not args.quiet:
+            print(f"Renamed {rename_result.renamed_count} scaffolds", file=sys.stderr)
+            print(f"Output written to {args.output}", file=sys.stderr)
+
+        # Print summary or JSON
+        if args.format == "json":
+            print(json.dumps(rename_result.to_dict(), indent=2))
+        elif args.verbose:
+            print(format_rename_summary(rename_result))
+
         sys.exit(EXIT_SUCCESS)
 
     # Require fasta argument for normal operation
@@ -531,7 +1049,7 @@ Supported naming conventions:
 
     # Handle stdin vs file input
     use_stdin = args.fasta == "-"
-    fasta_path = None if use_stdin else Path(args.fasta)
+    fasta_path: Path | None = None if use_stdin else Path(args.fasta)  # type: ignore[no-redef]
 
     # Determine if we need full sequences (for extraction)
     need_full_sequences = args.extract_chromosomes is not None
