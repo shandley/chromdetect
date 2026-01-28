@@ -1,0 +1,201 @@
+[
+  {
+    "description": "Zebra Finch VGP (SUPER_* naming)",
+    "fasta": "zebra_finch_test.fasta",
+    "total": 50,
+    "matched": 50,
+    "correct": 41,
+    "incorrect": 9,
+    "accuracy": 82.0,
+    "misclassifications": [
+      [
+        "scaffold_104_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_108_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_109_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_110_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_112_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_113_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_114_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_117_ctg1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "scaffold_118_ctg1",
+        "chromosome",
+        "unplaced"
+      ]
+    ]
+  },
+  {
+    "description": "Zebra Finch VGP (RefSeq NC_* naming)",
+    "fasta": "zebra_finch_refseq.fasta",
+    "total": 50,
+    "matched": 50,
+    "correct": 41,
+    "incorrect": 9,
+    "accuracy": 82.0,
+    "misclassifications": [
+      [
+        "NW_024545304.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545305.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545306.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545307.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545308.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545309.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545310.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545311.1",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NW_024545312.1",
+        "chromosome",
+        "unplaced"
+      ]
+    ]
+  },
+  {
+    "description": "Chicken GRC (Numeric naming)",
+    "fasta": "chicken_test.fasta",
+    "total": 50,
+    "matched": 50,
+    "correct": 50,
+    "incorrect": 0,
+    "accuracy": 100.0,
+    "misclassifications": []
+  },
+  {
+    "description": "Human GRCh38 (Numeric naming)",
+    "fasta": "human_test.fasta",
+    "total": 50,
+    "matched": 50,
+    "correct": 49,
+    "incorrect": 1,
+    "accuracy": 98.0,
+    "misclassifications": [
+      [
+        "HSCHR3UN_CTG2",
+        "chromosome",
+        "unlocalized"
+      ]
+    ]
+  },
+  {
+    "description": "Zebrafish GRCz11 (Numeric naming)",
+    "fasta": "zebrafish_test.fasta",
+    "total": 50,
+    "matched": 50,
+    "correct": 25,
+    "incorrect": 25,
+    "accuracy": 50.0,
+    "misclassifications": [
+      [
+        "NA876",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG2805",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG386",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG6109",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG349",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG6308",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "CTG6693",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NA352",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NA532",
+        "chromosome",
+        "unplaced"
+      ],
+      [
+        "NA809",
+        "chromosome",
+        "unplaced"
+      ]
+    ]
+  }
+]

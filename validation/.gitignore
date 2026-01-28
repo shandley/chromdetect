@@ -1,0 +1,14 @@
+# Generated test files
+*_test.fasta
+*_refseq.fasta
+*_results.json
+
+# Keep these:
+# - VALIDATION_REPORT.md
+# - validate_accuracy.py
+# - generate_test_fastas.py
+# - *_report.txt (NCBI assembly reports)
+# - validation_results.json (final aggregated results)
+
+# Exception: keep the aggregated results
+!validation_results.json

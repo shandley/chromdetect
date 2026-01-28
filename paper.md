@@ -118,7 +118,9 @@ ChromDetect is complementary to these tools. QUAST provides reference-based qual
 
 # Validation
 
-ChromDetect was tested on assemblies from the Vertebrate Genomes Project [@rhie2021towards], NCBI RefSeq, and simulated datasets with diverse naming conventions. The test suite includes 387 tests covering pattern matching, size classification, CLI functionality, and all output formats (JSON, TSV, BED, GFF, HTML). Classification accuracy exceeds 95% on assemblies using recognized naming conventions.
+ChromDetect was validated against NCBI assembly reports for assemblies from the Vertebrate Genomes Project [@rhie2021towards] and Genome Reference Consortium, including zebra finch (VGP), chicken, human (GRCh38), and zebrafish (GRCz11). Ground truth classifications were derived from official NCBI assembly reports.
+
+Classification accuracy was **82.4% overall** across 250 test scaffolds. Accuracy was highest (98-100%) on assemblies using standard NCBI/GRC numeric naming conventions. VGP SUPER_* naming achieved 82% accuracy, with misclassifications primarily affecting ambiguous contig names (e.g., `scaffold_N_ctg1`). The test suite includes 387 unit tests covering pattern matching, size classification, CLI functionality, and all output formats.
 
 # Limitations
 
