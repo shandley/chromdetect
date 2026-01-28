@@ -102,19 +102,9 @@ print(f"Found {len(chromosomes)} chromosomes, N50: {stats.n50/1e6:.1f} Mb")
 
 # Comparison with Existing Tools
 
-Table 1 compares ChromDetect with related assembly tools:
+Figure 1 compares ChromDetect features with related assembly tools. While QUAST [@gurevich2013quast], gfastats [@formenti2022gfastats], and assembly-stats provide assembly statistics, ChromDetect uniquely offers scaffold classification by naming convention, karyotype verification, name standardization, and NCBI report validation. These tools are complementary: QUAST provides reference-based quality assessment including misassembly detection, while gfastats offers GFA format support and sequence manipulation. ChromDetect addresses the distinct problem of scaffold classification and validation.
 
-| Feature | ChromDetect | QUAST | gfastats | assembly-stats |
-|---------|-------------|-------|----------|----------------|
-| N50/assembly statistics | ✓ | ✓ | ✓ | ✓ |
-| Scaffold classification by name | ✓ | – | – | – |
-| Karyotype verification | ✓ | – | – | – |
-| Name standardization | ✓ | – | – | – |
-| NCBI report validation | ✓ | – | – | – |
-| Version comparison | ✓ | ✓ | – | – |
-| Pure Python / no dependencies | ✓ | – | – | – |
-
-ChromDetect is complementary to these tools. QUAST provides reference-based quality assessment including misassembly detection, while gfastats offers GFA format support and sequence manipulation. ChromDetect addresses the distinct problem of scaffold classification and validation.
+![**Figure 1. ChromDetect features and validation.** (A) Feature comparison with existing assembly tools. White circles indicate supported features. ChromDetect (highlighted) uniquely provides scaffold classification, karyotype verification, and name standardization. (B) Validation accuracy across eight diverse genome assemblies spanning vertebrates (blue), plants (green), bacteria (purple), and telomere-to-telomere assemblies (red). ChromDetect achieved 100% classification accuracy across 283 scaffolds. Numbers above bars indicate accuracy and scaffold count.](figure1.png)
 
 # Validation
 
