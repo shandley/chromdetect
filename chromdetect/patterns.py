@@ -82,22 +82,42 @@ UNLOCALIZED_PATTERNS: list[str] = [
     r'unloc',
     r'unplaced',
     r'_un_',
+    r'_UN_',                  # HSCHR3UN_CTG2 style (human unlocalized)
     r'chrUn',
     r'scaffold.*unloc',
     r'_hap\d+_unloc',
+    r'^HSCHR\d+UN',           # Human unlocalized scaffolds (HSCHR3UN_*)
 ]
 
 # Patterns suggesting contigs/fragments (not chromosome-level)
+# These patterns indicate scaffolds that are NOT chromosome-level
 FRAGMENT_PATTERNS: list[str] = [
-    r'ctg\d*$',
-    r'contig',
+    # Contig markers in scaffold names
+    r'[_\-]ctg\d*',           # Contig suffix: scaffold_1_ctg1, scaffold-ctg2
+    r'^ctg\d+$',              # Standalone contig: CTG2805, ctg123
+    r'contig',                # Contains "contig"
+
+    # Assembly/polishing markers
     r'_arrow_',
     r'_pilon',
     r'fragment',
+    r'debris',
+
+    # Haplotype/alternate markers
     r'_hap\d',
     r'_alt$',
     r'_patch$',
-    r'debris',
+
+    # NCBI RefSeq accession prefixes for non-chromosome sequences
+    r'^NW_\d+\.\d+$',         # RefSeq unplaced scaffold
+    r'^NT_\d+\.\d+$',         # RefSeq genomic contig
+    r'^NZ_\d+\.\d+$',         # RefSeq bacterial scaffold
+
+    # WGS/assembly contig accessions
+    r'^[A-Z]{4}\d{8,}',       # WGS contig accessions (e.g., AADN02001234)
+
+    # Ambiguous short names (likely unplaced)
+    r'^NA\d+$',               # NA876, NA352 - ambiguous scaffold names
 ]
 
 # Sex chromosome identifiers

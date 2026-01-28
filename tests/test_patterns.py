@@ -145,6 +145,60 @@ class TestNCBIPatterns:
         assert "genbank" in method.lower()
 
 
+class TestUnplacedPatterns:
+    """Test unplaced/fragment scaffold pattern detection."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            # RefSeq unplaced scaffolds (NW_*)
+            "NW_024545304.1",
+            "NW_003763789.2",
+            # RefSeq genomic contigs (NT_*)
+            "NT_167244.2",
+            "NT_113952.1",
+            # Contig suffix patterns
+            "scaffold_104_ctg1",
+            "scaffold_1_ctg2",
+            "scaffold-5-ctg10",
+            # Standalone contig names
+            "CTG2805",
+            "CTG386",
+            "ctg123",
+            # Ambiguous NA* names
+            "NA876",
+            "NA352",
+            "NA123456",
+        ],
+    )
+    def test_unplaced_scaffold_detection(self, name: str) -> None:
+        """Test detection of unplaced scaffolds and contigs."""
+        classification, confidence, method, chr_id = detect_by_name(name)
+        assert classification == "unplaced", f"{name} should be unplaced, got {classification}"
+        assert "fragment" in method
+
+
+class TestUnlocalizedPatterns:
+    """Test unlocalized scaffold pattern detection."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            # Human unlocalized scaffolds
+            "HSCHR3UN_CTG2",
+            "HSCHR1UN_CTG1",
+            "HSCHR17UN_CTG5",
+            # Standard unlocalized patterns
+            "chr1_random",
+            "chrUn_gl000220",
+        ],
+    )
+    def test_unlocalized_scaffold_detection(self, name: str) -> None:
+        """Test detection of unlocalized scaffolds."""
+        classification, confidence, method, chr_id = detect_by_name(name)
+        assert classification == "unlocalized", f"{name} should be unlocalized, got {classification}"
+
+
 class TestPatternCompilation:
     """Test pattern compilation and consistency."""
 

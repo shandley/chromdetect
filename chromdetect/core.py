@@ -470,8 +470,16 @@ def classify_scaffolds(
         )
 
         # Combine classifications with priority rules
+        # Key principle: explicit name patterns (unplaced, unlocalized) should
+        # ALWAYS override size-based chromosome detection
         if name_conf >= 0.8:
             # Strong name-based classification takes priority
+            final_class = name_class
+            final_conf = name_conf
+            final_method = name_method
+        elif name_class in ("unplaced", "unlocalized"):
+            # Name explicitly indicates non-chromosome - trust it over size
+            # This handles cases like "scaffold_1_ctg1" or "NW_*" accessions
             final_class = name_class
             final_conf = name_conf
             final_method = name_method
@@ -483,7 +491,7 @@ def classify_scaffolds(
                 final_conf = min(0.95, (name_conf + size_conf) / 2 + 0.1)
                 final_method = f"{name_method}+{size_method}"
             else:
-                # Size says chromosome, name doesn't - use size with penalty
+                # Size says chromosome, name is ambiguous - use size with penalty
                 final_class = "chromosome"
                 final_conf = size_conf * 0.9
                 final_method = size_method
