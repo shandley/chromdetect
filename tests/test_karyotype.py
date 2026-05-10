@@ -283,6 +283,58 @@ class TestBuiltinKaryotypes:
         assert "I" in yeast.autosomes
         assert "XVI" in yeast.autosomes
 
+    @pytest.mark.parametrize(
+        (
+            "query",
+            "scientific_name",
+            "chromosome_count",
+            "autosome_count",
+            "expected_note",
+        ),
+        [
+            ("atlantic_salmon", "Salmo salar", 29, 29, "2n=58"),
+            ("rainbow_trout", "Oncorhynchus mykiss", 29, 29, "2n=58-64"),
+            ("tilapia", "Oreochromis niloticus", 22, 22, "2n=44"),
+            ("common_carp", "Cyprinus carpio", 50, 50, "2n=100"),
+            ("medaka", "Oryzias latipes", 24, 23, "2n=48"),
+            ("stickleback", "Gasterosteus aculeatus", 21, 21, "2n=42"),
+            ("fugu", "Takifugu rubripes", 22, 22, "2n=44"),
+        ],
+    )
+    def test_fish_and_aquaculture_karyotypes(
+        self,
+        query,
+        scientific_name,
+        chromosome_count,
+        autosome_count,
+        expected_note,
+    ):
+        """Test fish and aquaculture karyotypes requested in issue #8."""
+        db = KaryotypeDatabase()
+        fish = db.lookup(query)
+        assert fish is not None
+        assert fish.scientific_name == scientific_name
+        assert fish.chromosome_count == chromosome_count
+        assert len(fish.autosomes) == autosome_count
+        assert expected_note in fish.notes
+
+    @pytest.mark.parametrize(
+        ("alias", "expected_name"),
+        [
+            ("atlantic salmon", "atlantic_salmon"),
+            ("rainbow trout", "rainbow_trout"),
+            ("nile tilapia", "tilapia"),
+            ("carp", "common_carp"),
+            ("three-spined stickleback", "stickleback"),
+        ],
+    )
+    def test_fish_and_aquaculture_aliases(self, alias, expected_name):
+        """Test common-name aliases for fish and aquaculture karyotypes."""
+        db = KaryotypeDatabase()
+        fish = db.lookup(alias)
+        assert fish is not None
+        assert fish.name == expected_name
+
 
 class TestValidateKaryotype:
     """Tests for karyotype validation function."""
