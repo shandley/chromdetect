@@ -283,6 +283,62 @@ class TestBuiltinKaryotypes:
         assert "I" in yeast.autosomes
         assert "XVI" in yeast.autosomes
 
+    @pytest.mark.parametrize(
+        ("name", "scientific_name", "taxid", "chromosome_count"),
+        [
+            ("potato", "Solanum tuberosum", 4113, 24),
+            ("cotton", "Gossypium hirsutum", 3635, 26),
+            ("sunflower", "Helianthus annuus", 4232, 17),
+            ("barley", "Hordeum vulgare", 4513, 7),
+            ("grape", "Vitis vinifera", 29760, 19),
+            ("cannabis", "Cannabis sativa", 3483, 10),
+            ("strawberry", "Fragaria × ananassa", 3747, 28),
+        ],
+    )
+    def test_additional_plant_karyotypes(self, name, scientific_name, taxid, chromosome_count):
+        """Test additional plant karyotypes requested in issue #1."""
+        db = KaryotypeDatabase()
+        plant = db.lookup(name)
+
+        assert plant is not None
+        assert plant.name == name
+        assert plant.scientific_name == scientific_name
+        assert plant.taxid == taxid
+        assert plant.chromosome_count == chromosome_count
+        assert len(plant.autosomes) + len(plant.sex_chromosomes) == chromosome_count
+
+    @pytest.mark.parametrize(
+        ("query", "expected_name"),
+        [
+            ("S. tuberosum", "potato"),
+            ("upland cotton", "cotton"),
+            ("H. annuus", "sunflower"),
+            ("Hordeum vulgare", "barley"),
+            ("grapevine", "grape"),
+            ("hemp", "cannabis"),
+            ("garden strawberry", "strawberry"),
+        ],
+    )
+    def test_additional_plant_aliases(self, query, expected_name):
+        """Test aliases and scientific names for additional plant karyotypes."""
+        db = KaryotypeDatabase()
+        plant = db.lookup(query)
+
+        assert plant is not None
+        assert plant.name == expected_name
+
+    def test_polyploid_plant_notes(self):
+        """Test notes preserve polyploid context for crop species."""
+        db = KaryotypeDatabase()
+        potato = db.lookup("potato")
+        strawberry = db.lookup("strawberry")
+
+        assert potato is not None
+        assert strawberry is not None
+        assert "2n=48" in potato.notes
+        assert "Octoploid" in strawberry.notes
+        assert "2n=56" in strawberry.notes
+
 
 class TestValidateKaryotype:
     """Tests for karyotype validation function."""
